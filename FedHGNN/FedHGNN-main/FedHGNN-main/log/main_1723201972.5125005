@@ -1,0 +1,75 @@
+2024-08-09 19:12:52,512 - INFO - 信息会同时显示在终端和文件中。
+2024-08-09 19:13:01,663 - INFO - Namespace(fea_dim=64, in_dim=64, hidden_dim=64, out_dim=64, shared_num=20, path='Data/', dataset='acm', device='cuda:0', num_heads=[2], eps=1, num_sample=0, valid_step=5, nonlinearity='relu', log_dir='../../log/', is_gcn=False, is_attention=False, hetero=True, is_trans=False, is_random_init=True, is_graph=True, local_train_num=1, agg_mode='add', agg_func='ATTENTION', lr=0.01, dropout=0, weight_decay=0, epochs=10000, batch_size=32, l2_reg=True, grad_limit=1.0, clients_limit=0.1, items_limit=60, type='ATTENTION', p1=1, p2=1)
+2024-08-09 19:13:01,663 - INFO - {'acm': {'user': [['pa', 'ap'], ['pc', 'cp']], 'item': [['ap', 'pa']]}, 'dblp': {'user': [['pa', 'ap'], ['pc', 'cp']], 'item': [['ap', 'pa']]}, 'yelp': {'user': [['pa', 'ap'], ['pa', 'aca', 'caa', 'ap']], 'item': [['ap', 'pa']]}, 'DoubanBook': {'item': [['bu', 'ub'], ['bg', 'gb']], 'user': [['ub', 'bu'], ['ua', 'au']]}}
+2024-08-09 19:15:08,488 - INFO - training average loss: 6.51770, time:7.6 s
+2024-08-09 19:15:16,477 - INFO - training average loss: 6.78171, time:8.0 s
+2024-08-09 19:15:24,278 - INFO - training average loss: 6.79835, time:7.8 s
+2024-08-09 19:15:31,944 - INFO - training average loss: 6.62660, time:7.7 s
+2024-08-09 19:15:40,062 - INFO - training average loss: 6.31933, time:8.1 s
+2024-08-09 19:15:42,631 - INFO - Epoch: 0, hit_at_5 = 0.0902, hit_at_10 = 0.1917, ndcg_at_5 = 0.0499, ndcg_at_10 = 0.0823
+2024-08-09 19:15:42,633 - INFO - Best Epoch: 0, hit_at_5 = 0.0902, hit_at_10 = 0.1917, ndcg_at_5 = 0.0499, ndcg_at_10 = 0.0823
+2024-08-09 19:15:49,806 - INFO - training average loss: 6.25000, time:7.2 s
+2024-08-09 19:15:57,566 - INFO - training average loss: 6.17377, time:7.8 s
+2024-08-09 19:16:05,551 - INFO - training average loss: 6.05705, time:8.0 s
+2024-08-09 19:16:13,508 - INFO - training average loss: 5.97476, time:8.0 s
+2024-08-09 19:16:21,500 - INFO - training average loss: 5.93755, time:8.0 s
+2024-08-09 19:16:24,210 - INFO - Epoch: 1, hit_at_5 = 0.1285, hit_at_10 = 0.2306, ndcg_at_5 = 0.0801, ndcg_at_10 = 0.1125
+2024-08-09 19:16:24,212 - INFO - Best Epoch: 1, hit_at_5 = 0.1285, hit_at_10 = 0.2306, ndcg_at_5 = 0.0801, ndcg_at_10 = 0.1125
+2024-08-09 19:16:31,887 - INFO - training average loss: 5.92830, time:7.7 s
+2024-08-09 19:16:40,317 - INFO - training average loss: 5.86844, time:8.4 s
+2024-08-09 19:16:48,448 - INFO - training average loss: 5.90918, time:8.1 s
+2024-08-09 19:16:56,362 - INFO - training average loss: 5.88544, time:7.9 s
+2024-08-09 19:17:04,413 - INFO - training average loss: 5.86682, time:8.1 s
+2024-08-09 19:17:07,238 - INFO - Epoch: 2, hit_at_5 = 0.1034, hit_at_10 = 0.1974, ndcg_at_5 = 0.0628, ndcg_at_10 = 0.0929
+2024-08-09 19:17:07,240 - INFO - Best Epoch: 1, hit_at_5 = 0.1285, hit_at_10 = 0.2306, ndcg_at_5 = 0.0801, ndcg_at_10 = 0.1125
+2024-08-09 19:17:14,493 - INFO - training average loss: 5.84130, time:7.3 s
+2024-08-09 19:17:22,172 - INFO - training average loss: 5.80621, time:7.7 s
+2024-08-09 19:17:30,147 - INFO - training average loss: 5.76512, time:8.0 s
+2024-08-09 19:17:38,316 - INFO - training average loss: 5.74288, time:8.2 s
+2024-08-09 19:17:46,582 - INFO - training average loss: 5.74695, time:8.3 s
+2024-08-09 19:17:49,211 - INFO - Epoch: 3, hit_at_5 = 0.1272, hit_at_10 = 0.2292, ndcg_at_5 = 0.0781, ndcg_at_10 = 0.1105
+2024-08-09 19:17:49,214 - INFO - Best Epoch: 1, hit_at_5 = 0.1285, hit_at_10 = 0.2306, ndcg_at_5 = 0.0801, ndcg_at_10 = 0.1125
+2024-08-09 19:17:56,944 - INFO - training average loss: 5.73328, time:7.7 s
+2024-08-09 19:18:04,726 - INFO - training average loss: 5.70786, time:7.8 s
+2024-08-09 19:18:12,734 - INFO - training average loss: 5.68424, time:8.0 s
+2024-08-09 19:18:20,689 - INFO - training average loss: 5.67539, time:8.0 s
+2024-08-09 19:18:29,019 - INFO - training average loss: 5.67127, time:8.3 s
+2024-08-09 19:18:31,696 - INFO - Epoch: 4, hit_at_5 = 0.1482, hit_at_10 = 0.2516, ndcg_at_5 = 0.0956, ndcg_at_10 = 0.1286
+2024-08-09 19:18:31,698 - INFO - Best Epoch: 4, hit_at_5 = 0.1482, hit_at_10 = 0.2516, ndcg_at_5 = 0.0956, ndcg_at_10 = 0.1286
+2024-08-09 19:18:39,505 - INFO - training average loss: 5.66324, time:7.8 s
+2024-08-09 19:18:47,292 - INFO - training average loss: 5.65857, time:7.8 s
+2024-08-09 19:18:55,303 - INFO - training average loss: 5.65303, time:8.0 s
+2024-08-09 19:19:03,489 - INFO - training average loss: 5.64113, time:8.2 s
+2024-08-09 19:19:11,471 - INFO - training average loss: 5.62690, time:8.0 s
+2024-08-09 19:19:14,077 - INFO - Epoch: 5, hit_at_5 = 0.1377, hit_at_10 = 0.2416, ndcg_at_5 = 0.0886, ndcg_at_10 = 0.1218
+2024-08-09 19:19:14,079 - INFO - Best Epoch: 4, hit_at_5 = 0.1482, hit_at_10 = 0.2516, ndcg_at_5 = 0.0956, ndcg_at_10 = 0.1286
+2024-08-09 19:19:21,673 - INFO - training average loss: 5.60635, time:7.6 s
+2024-08-09 19:19:29,397 - INFO - training average loss: 5.60860, time:7.7 s
+2024-08-09 19:19:37,325 - INFO - training average loss: 5.58752, time:7.9 s
+2024-08-09 19:19:45,348 - INFO - training average loss: 5.57371, time:8.0 s
+2024-08-09 19:19:53,305 - INFO - training average loss: 5.55560, time:8.0 s
+2024-08-09 19:19:56,506 - INFO - Epoch: 6, hit_at_5 = 0.1633, hit_at_10 = 0.2654, ndcg_at_5 = 0.1062, ndcg_at_10 = 0.1389
+2024-08-09 19:19:56,507 - INFO - Best Epoch: 6, hit_at_5 = 0.1633, hit_at_10 = 0.2654, ndcg_at_5 = 0.1062, ndcg_at_10 = 0.1389
+2024-08-09 19:20:03,912 - INFO - training average loss: 5.54489, time:7.4 s
+2024-08-09 19:20:11,651 - INFO - training average loss: 5.53565, time:7.7 s
+2024-08-09 19:20:19,633 - INFO - training average loss: 5.52952, time:8.0 s
+2024-08-09 19:20:27,962 - INFO - training average loss: 5.52275, time:8.3 s
+2024-08-09 19:20:36,051 - INFO - training average loss: 5.51229, time:8.1 s
+2024-08-09 19:20:40,041 - INFO - Epoch: 7, hit_at_5 = 0.1371, hit_at_10 = 0.2360, ndcg_at_5 = 0.0873, ndcg_at_10 = 0.1188
+2024-08-09 19:20:40,044 - INFO - Best Epoch: 6, hit_at_5 = 0.1633, hit_at_10 = 0.2654, ndcg_at_5 = 0.1062, ndcg_at_10 = 0.1389
+2024-08-09 19:20:48,088 - INFO - training average loss: 5.49766, time:8.0 s
+2024-08-09 19:20:56,532 - INFO - training average loss: 5.49654, time:8.4 s
+2024-08-09 19:21:05,128 - INFO - training average loss: 5.50225, time:8.6 s
+2024-08-09 19:21:13,335 - INFO - training average loss: 5.49842, time:8.2 s
+2024-08-09 19:21:21,024 - INFO - training average loss: 5.49313, time:7.7 s
+2024-08-09 19:21:23,735 - INFO - Epoch: 8, hit_at_5 = 0.1871, hit_at_10 = 0.2856, ndcg_at_5 = 0.1233, ndcg_at_10 = 0.1548
+2024-08-09 19:21:23,736 - INFO - Best Epoch: 8, hit_at_5 = 0.1871, hit_at_10 = 0.2856, ndcg_at_5 = 0.1233, ndcg_at_10 = 0.1548
+2024-08-09 19:21:31,263 - INFO - training average loss: 5.48054, time:7.5 s
+2024-08-09 19:21:38,947 - INFO - training average loss: 5.46992, time:7.7 s
+2024-08-09 19:21:46,682 - INFO - training average loss: 5.46826, time:7.7 s
+2024-08-09 19:21:54,472 - INFO - training average loss: 5.45211, time:7.8 s
+2024-08-09 19:22:02,397 - INFO - training average loss: 5.44974, time:7.9 s
+2024-08-09 19:22:05,157 - INFO - Epoch: 9, hit_at_5 = 0.1979, hit_at_10 = 0.2870, ndcg_at_5 = 0.1319, ndcg_at_10 = 0.1605
+2024-08-09 19:22:05,159 - INFO - Best Epoch: 9, hit_at_5 = 0.1979, hit_at_10 = 0.2870, ndcg_at_5 = 0.1319, ndcg_at_10 = 0.1605
+2024-08-09 19:22:11,990 - INFO - training average loss: 5.45222, time:6.8 s
+2024-08-09 19:22:20,600 - INFO - training average loss: 5.44490, time:8.6 s
