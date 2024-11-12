@@ -45,7 +45,14 @@ class GraphRecommendationModel(nn.Module):
 
         # History embedding aggregation with multi-head attention
         history_emb = self.item_embedding(history)
-        neighbor_emb = neighbor_emb.view(neighbor_emb.size(0), neighbor_emb.size(1), -1, history_emb.size(-1))
+        print(f"Original neighbor_emb shape: {neighbor_emb.shape}")
+        if neighbor_emb.dim() < 4:
+            neighbor_emb = neighbor_emb.unsqueeze(-1).expand(-1, -1, 1, history_emb.size(-1))
+        else:
+            padding_size = history_emb.size(-1) - neighbor_emb.size(-1)
+            if padding_size > 0:
+                neighbor_emb = F.pad(neighbor_emb, (0, padding_size), "constant", 0)
+        print(f"Adjusted neighbor_emb shape: {neighbor_emb.shape}")
 
         attention_inputs = torch.cat((history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb.size(2), -1), neighbor_emb), dim=-1)
         attention_scores = F.relu(self.attention_layer(attention_inputs.view(-1, 2 * history_emb.size(-1))))
@@ -54,7 +61,7 @@ class GraphRecommendationModel(nn.Module):
 
         # Multi-head projection and aggregation
         multihead_embs = [proj(aggregated_emb) for proj in self.multihead_proj]
-        aggregated_emb = torch.cat(multihead_embs, dim=-1)
+        aggregated_emb = torch.cat(multihead_embs, dim=-1) if len(multihead_embs) > 0 else aggregated_emb
 
         # Reduce sequence dimension of aggregated_emb
         aggregated_emb = aggregated_emb.mean(dim=1)

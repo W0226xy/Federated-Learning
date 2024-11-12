@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
     # initialize model
     model = GraphRecommendationModel(num_users=Otraining.shape[0] + 3, num_items=Otraining.shape[1] + 3,
-                                     hidden_dim=32)
+                                     hidden_dim=HIDDEN)
     model.to(device)  # Move model to the detected device
     optimizer = torch.optim.SGD(model.parameters(), lr=LR)
     criterion = nn.MSELoss()

@@ -1,5 +1,5 @@
 LABEL_SCALE = 100
-HIDDEN=64#嵌入维度
+HIDDEN=16#嵌入维度
 DROP=0.2
 BATCH_SIZE=8#每批训练大小
 HIS_LEN=50#历史交互长度
