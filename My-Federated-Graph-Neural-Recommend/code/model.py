@@ -26,11 +26,13 @@ class GraphRecommendationModel(nn.Module):
         self.item_embedding = nn.Embedding(num_items, hidden_dim)
         self.fc1 = nn.Linear(2 * hidden_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.attention_layer = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.attention_layer = nn.Linear(2 * hidden_dim, 96)
         self.attention_mlp = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(96, 48),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 1)
+            nn.Linear(48, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1)
         )
         self.num_heads = num_heads
         self.multihead_proj = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim // num_heads) for _ in range(num_heads)])
@@ -45,9 +47,9 @@ class GraphRecommendationModel(nn.Module):
         history_emb = self.item_embedding(history)
         neighbor_emb = neighbor_emb.view(neighbor_emb.size(0), neighbor_emb.size(1), -1, history_emb.size(-1))
 
-        attention_inputs = torch.cat((history_emb.unsqueeze(2).expand_as(neighbor_emb), neighbor_emb), dim=-1)
-        attention_scores = F.relu(self.attention_layer(attention_inputs))
-        attention_weights = F.softmax(self.attention_mlp(attention_scores).squeeze(-1), dim=-1)
+        attention_inputs = torch.cat((history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb.size(2), -1), neighbor_emb), dim=-1)
+        attention_scores = F.relu(self.attention_layer(attention_inputs.view(-1, 2 * history_emb.size(-1))))
+        attention_weights = F.softmax(self.attention_mlp(attention_scores).view(neighbor_emb.size(0), neighbor_emb.size(1), neighbor_emb.size(2)), dim=-1)
         aggregated_emb = (attention_weights.unsqueeze(-1) * neighbor_emb).sum(dim=-2)
 
         # Multi-head projection and aggregation

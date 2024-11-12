@@ -12,11 +12,14 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Set visible GPU device to 1 to ensure code runs on the specified GPU
 path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
 
 # main.py
 if __name__ == "__main__":
+
+    # Set device to GPU if available
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     # load data
     M = load_matlab_file(path_dataset, 'M')  # User-item interaction matrix
@@ -35,11 +38,12 @@ if __name__ == "__main__":
     # create PyTorch dataset and dataloader
     train_dataset = CustomDataset(trainu, traini, trainlabel, usernei,
                                   usernei)  # Using usernei as a placeholder for neighbor_emb
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 
     # initialize model
     model = GraphRecommendationModel(num_users=Otraining.shape[0] + 3, num_items=Otraining.shape[1] + 3,
-                                     hidden_dim=HIDDEN)
+                                     hidden_dim=32)
+    model.to(device)  # Move model to the detected device
     optimizer = torch.optim.SGD(model.parameters(), lr=LR)
     criterion = nn.MSELoss()
 
@@ -49,7 +53,7 @@ if __name__ == "__main__":
     for epoch in range(EPOCH):
         print(f"Epoch {epoch + 1}/{EPOCH}")
         epoch_loss = 0
-        alluserembs = model.user_embedding.weight.data.clone()  # Get user embeddings
+        alluserembs = model.user_embedding.weight.data.clone().cpu()  # Get user embeddings
         user_neighbor_emb = graph_embedding_expansion(Otraining, usernei, alluserembs.numpy(),
                                                       privacy_needed=True)  # Calculate neighbor embeddings
 
@@ -58,32 +62,33 @@ if __name__ == "__main__":
 
         for batch_idx, ((user_ids, item_ids, history, neighbor_emb), labels) in enumerate(train_loader):
             optimizer.zero_grad()  # Clear gradients
-            user_ids = user_ids.long()  # Ensure tensor type is consistent
-            item_ids = item_ids.long()  # Ensure tensor type is consistent
-            history = history.long()  # Ensure tensor type is consistent
-            neighbor_emb = neighbor_emb.float()  # Ensure tensor type is consistent
+            user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+            item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+            history = history.long().to(device)  # Ensure tensor type is consistent and move to device
+            neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
+            labels = labels.to(device)  # Move labels to device
             output = model(user_ids, item_ids, history, neighbor_emb)  # Forward propagation
-            loss = criterion(output, labels)  # Calculate loss
+            loss = torch.sqrt(criterion(output, labels))  # Calculate RMSE  # Calculate loss
             loss.backward()  # Backward propagation
 
             # Add differential privacy noise
             with torch.no_grad():
                 for param in model.parameters():
                     if param.grad is not None:
-                        noise = torch.normal(0, noise_scale, size=param.size())
+                        noise = torch.normal(0, noise_scale, size=param.size(), device=device)
                         param.grad += noise  # Add pseudo-interaction noise
 
                         # Add local differential privacy (LDP) noise
                         ldp_noise = torch.tensor(
                             np.random.laplace(0, LR * 2 * CLIP / np.sqrt(BATCH_SIZE) / EPS, size=param.shape),
-                            dtype=torch.float32)
+                            dtype=torch.float32, device=device)
                         param.grad += ldp_noise
 
             optimizer.step()  # Update weights
             epoch_loss += loss.item()
 
             if batch_idx % 10 == 0:
-                print(f"Batch {batch_idx + 1}/{len(train_loader)}, Loss: {loss.item():.4f}")
+                print(f"Batch {batch_idx + 1}/{len(train_loader)}, RMSE Loss: {loss.item():.4f}")
         print(f"Epoch {epoch + 1} completed with average loss: {epoch_loss / len(train_loader):.4f}\n")
 
     # test (placeholder, modify as needed)
@@ -95,14 +100,15 @@ if __name__ == "__main__":
     all_labels = []
     with torch.no_grad():
         for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
-            user_ids = user_ids.long()  # Ensure tensor type is consistent
-            item_ids = item_ids.long()  # Ensure tensor type is consistent
-            history = history.long()  # Ensure tensor type is consistent
-            neighbor_emb = neighbor_emb.float()  # Ensure tensor type is consistent
+            user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+            item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+            history = history.long().to(device)  # Ensure tensor type is consistent and move to device
+            neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
+            labels = labels.to(device)  # Move labels to device
             output = model(user_ids, item_ids, history, neighbor_emb)
             all_preds.append(output)
             all_labels.append(labels)
-    all_preds = torch.cat(all_preds).numpy()
-    all_labels = torch.cat(all_labels).numpy()
+    all_preds = torch.cat(all_preds).cpu().numpy()
+    all_labels = torch.cat(all_labels).cpu().numpy()
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
     print('rmse:', rmse)

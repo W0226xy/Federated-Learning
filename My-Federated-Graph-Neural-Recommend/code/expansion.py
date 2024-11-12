@@ -65,10 +65,22 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
             all_neighbor_embs.append(neighbor_embs)
         all_neighbor_embs = all_neighbor_embs[:HIS_LEN]
         all_neighbor_embs += [[[0.] * HIDDEN] * NEIGHBOR_LEN] * (HIS_LEN - len(all_neighbor_embs))
+        all_neighbor_embs = np.zeros((HIS_LEN, NEIGHBOR_LEN, HIDDEN), dtype='float32')
+        for idx, emb in enumerate(all_neighbor_embs):
+            all_neighbor_embs[idx, :len(emb), :] = np.array(emb, dtype='float32')
         user_neighbor_emb.append(all_neighbor_embs)
 
-    user_neighbor_emb = np.array(user_neighbor_emb, dtype='float32')
+    # Pad user_neighbor_emb to ensure consistent dimensions
+    max_len = max([user.shape[0] for user in user_neighbor_emb])
+    padded_user_neighbor_emb = []
+    for user in user_neighbor_emb:
+        pad_len = max_len - user.shape[0]
+        if pad_len > 0:
+            padding = np.zeros((pad_len, NEIGHBOR_LEN, HIDDEN), dtype='float32')
+            padded_user = np.concatenate([user, padding], axis=0)
+        else:
+            padded_user = user
+        padded_user_neighbor_emb.append(padded_user)
+
+    user_neighbor_emb = np.array(padded_user_neighbor_emb, dtype='float32')  # Use float32 dtype for compatibility
     return user_neighbor_emb
-
-
-
