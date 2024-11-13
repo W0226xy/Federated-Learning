@@ -47,14 +47,24 @@ class GraphRecommendationModel(nn.Module):
         history_emb = self.item_embedding(history)
         print(f"Original neighbor_emb shape: {neighbor_emb.shape}")
         if neighbor_emb.dim() < 4:
-            neighbor_emb = neighbor_emb.unsqueeze(-1).expand(-1, -1, 1, history_emb.size(-1))
-        else:
-            padding_size = history_emb.size(-1) - neighbor_emb.size(-1)
-            if padding_size > 0:
-                neighbor_emb = F.pad(neighbor_emb, (0, padding_size), "constant", 0)
+            # Fill missing neighbor embeddings with default values (e.g., zeros)
+            neighbor_emb = torch.zeros(user_ids.size(0), history.size(1), 100, history_emb.size(-1), device=history.device)
+            print(f"Filled neighbor_emb shape: {neighbor_emb.shape}")
+
+        padding_size = history_emb.size(-1) - neighbor_emb.size(-1)
+        if padding_size > 0:
+            neighbor_emb = F.pad(neighbor_emb, (0, padding_size), "constant", 0)
         print(f"Adjusted neighbor_emb shape: {neighbor_emb.shape}")
 
-        attention_inputs = torch.cat((history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb.size(2), -1), neighbor_emb), dim=-1)
+        # Repeat neighbor_emb to match batch size and history length dimensions
+        neighbor_emb = neighbor_emb.repeat(history_emb.size(0) // neighbor_emb.size(0), 1, 1, 1)
+        print(f"Repeated neighbor_emb shape: {neighbor_emb.shape}")
+
+        # Repeat history_emb to match neighbor_emb dimensions
+        history_emb_expanded = history_emb.unsqueeze(2).repeat(1, 1, neighbor_emb.size(2), 1)
+        print(f"Expanded history_emb shape: {history_emb_expanded.shape}")
+
+        attention_inputs = torch.cat((history_emb_expanded, neighbor_emb), dim=-1)
         attention_scores = F.relu(self.attention_layer(attention_inputs.view(-1, 2 * history_emb.size(-1))))
         attention_weights = F.softmax(self.attention_mlp(attention_scores).view(neighbor_emb.size(0), neighbor_emb.size(1), neighbor_emb.size(2)), dim=-1)
         aggregated_emb = (attention_weights.unsqueeze(-1) * neighbor_emb).sum(dim=-2)

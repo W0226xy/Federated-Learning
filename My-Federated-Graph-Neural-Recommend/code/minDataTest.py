@@ -1,9 +1,12 @@
 import h5py
 import numpy as np
+import scipy.sparse as sp  # 导入 scipy.sparse
+
+# 设置 numpy 打印选项，确保打印所有数据
+np.set_printoptions(threshold=np.inf)
 
 # 文件路径
 path_dataset = 'training_test_dataset.mat'
-
 
 # 读取并提取前 50 条数据的函数
 def load_first_50(path_file, name_field, num_samples=50):
@@ -30,14 +33,12 @@ def load_first_50(path_file, name_field, num_samples=50):
 
     return out
 
-
 # 保存前 50 条数据到新的 .mat 文件
 def save_first_50_to_mat(filename, M, Otraining, Otest):
     with h5py.File(filename, 'w') as db:
         db.create_dataset('M', data=M)
         db.create_dataset('Otraining', data=Otraining)
         db.create_dataset('Otest', data=Otest)
-
 
 if __name__ == "__main__":
     # 提取前 50 条交互数据用于调试
