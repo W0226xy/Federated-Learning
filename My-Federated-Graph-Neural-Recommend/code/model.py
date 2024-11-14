@@ -16,6 +16,11 @@ class CustomDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
+        # Ensure index is within bounds for all inputs
+        max_idx = min(len(self.user_ids), len(self.item_ids), len(self.history), len(self.neighbor_emb), len(self.labels))
+        if idx >= max_idx:
+            idx = max_idx - 1  # Adjust index to be within valid range
+
         return (self.user_ids[idx], self.item_ids[idx], self.history[idx], self.neighbor_emb[idx]), self.labels[idx]
 
 

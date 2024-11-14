@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
 
 # main.py
 if __name__ == "__main__":
