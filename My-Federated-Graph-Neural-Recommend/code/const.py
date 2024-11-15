@@ -1,6 +1,6 @@
 LABEL_SCALE = 100#标签缩放比例
-HIDDEN=16#嵌入维度
-DROP=0.2#DropOut比率，防止过拟合
+HIDDEN=64#嵌入维度
+DROP=0.3#DropOut比率，防止过拟合
 BATCH_SIZE=16#每批训练大小
 HIS_LEN=50#历史交互长度
 PSEUDO=1000
