@@ -5,8 +5,7 @@ import numpy as np
 import base64
 from tqdm import tqdm
 
-
-def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False):
+def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False, encrypt_data_flag=False):
     # local encryption
     local_ciphertext = []
     for i in tqdm(usernei):  # For each user's neighbors, generate encrypted signatures
@@ -17,7 +16,10 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
                 if privacy_needed:
                     perturbed_j = perturb_items([str(j)])  # Perturb item ID
                     j = perturbed_j[0]
-                messages.append(base64.b64encode(sign(str(j))).decode('utf-8'))
+                signed_message = sign(str(j))
+                if encrypt_data_flag:
+                    signed_message = encrypt_data(signed_message)  # Encrypt the signed message if flag is set
+                messages.append(base64.b64encode(signed_message).decode('utf-8'))
         local_ciphertext.append(messages)  # Store encrypted neighbor IDs
 
     # local id-ciphertext mapping
@@ -65,10 +67,10 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
             all_neighbor_embs.append(neighbor_embs)
         all_neighbor_embs = all_neighbor_embs[:HIS_LEN]
         all_neighbor_embs += [[[0.] * HIDDEN] * NEIGHBOR_LEN] * (HIS_LEN - len(all_neighbor_embs))
-        all_neighbor_embs = np.zeros((HIS_LEN, NEIGHBOR_LEN, HIDDEN), dtype='float32')
+        expanded_neighbor_embs = np.zeros((HIS_LEN, NEIGHBOR_LEN, HIDDEN), dtype='float32')
         for idx, emb in enumerate(all_neighbor_embs):
-            all_neighbor_embs[idx, :len(emb), :] = np.array(emb, dtype='float32')
-        user_neighbor_emb.append(all_neighbor_embs)
+            expanded_neighbor_embs[idx, :len(emb), :] = np.array(emb, dtype='float32')
+        user_neighbor_emb.append(expanded_neighbor_embs)
 
     # Pad user_neighbor_emb to ensure consistent dimensions
     max_len = max([user.shape[0] for user in user_neighbor_emb])

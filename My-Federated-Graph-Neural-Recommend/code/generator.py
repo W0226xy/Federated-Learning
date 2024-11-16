@@ -1,5 +1,7 @@
 import numpy as np
-def generate_batch_data_random(batch_size, train_user_index, trainu, traini, history, trainlabel, user_neighbor_emb):
+from encrypt import encrypt_user_data
+
+def generate_batch_data_random(batch_size, train_user_index, trainu, traini, history, trainlabel, user_neighbor_emb, encrypt_data_flag=False):
     idx = np.array(list(train_user_index.keys()))  # Randomize user indices
     np.random.shuffle(idx)  # Shuffle user indices to ensure different order for each batch
     batches = [idx[range(batch_size * i, min(len(idx), batch_size * (i + 1)))] for i in range(len(idx) // batch_size + 1) if len(range(batch_size * i, min(len(idx), batch_size * (i + 1))))]
@@ -22,10 +24,16 @@ def generate_batch_data_random(batch_size, train_user_index, trainu, traini, his
             uid = np.expand_dims(uid, axis=1)  # Expand dimensions for model input
             iid = np.expand_dims(iid, axis=1)
 
+            # Encrypt user data if flag is set
+            if encrypt_data_flag:
+                uid = encrypt_user_data(uid)
+                iid = encrypt_user_data(iid)
+                ui = encrypt_user_data(ui)
+                uneiemb = encrypt_user_data(uneiemb)
+
             yield ([uid, iid, ui, uneiemb], [y])  # Yield generated batch data
 
-
-def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neighbor_emb):
+def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neighbor_emb, encrypt_data_flag=False):
     idx = np.arange(len(testlabel))
     np.random.shuffle(idx)
     y = testlabel
@@ -37,5 +45,12 @@ def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neigh
             iid = np.expand_dims(testi[i], axis=1)
             ui = history[testu[i]]
             uneiemb = user_neighbor_emb[testu[i]]
+
+            # Encrypt user data if flag is set
+            if encrypt_data_flag:
+                uid = encrypt_user_data(uid)
+                iid = encrypt_user_data(iid)
+                ui = encrypt_user_data(ui)
+                uneiemb = encrypt_user_data(uneiemb)
 
             yield ([uid, iid, ui, uneiemb], [y])

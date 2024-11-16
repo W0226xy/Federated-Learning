@@ -1,11 +1,16 @@
-LABEL_SCALE = 100#标签缩放比例
-HIDDEN=64#嵌入维度
-DROP=0.3#DropOut比率，防止过拟合
-BATCH_SIZE=16#每批训练大小
-HIS_LEN=50#历史交互长度
-PSEUDO=1000
-NEIGHBOR_LEN=100#最多考虑的邻居节点个数
-CLIP=0.1#梯度裁剪
-LR=0.01#学习率
-EPS=1#隐私预算
-EPOCH=3#训练轮数
+LABEL_SCALE = 100
+HIDDEN = 16  # Embedding dimension
+DROP = 0.2
+BATCH_SIZE = 32  # Batch size for training
+HIS_LEN = 50  # Length of historical interactions
+PSEUDO = 1000
+NEIGHBOR_LEN = 100  # Maximum number of neighbor nodes considered
+CLIP = 0.1
+LR = 0.01
+EPS = 1
+EPOCH = 3
+
+# Federated Learning Parameters
+AGGREGATION_ROUNDS = 10  # Number of federated aggregation rounds
+CLIENTS_PER_ROUND = 5  # Number of clients selected per round
+GLOBAL_LR = 0.001  # Learning rate for global model updates

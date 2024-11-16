@@ -10,11 +10,11 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Hash import SHA256
 
 
-def generate_key():  # 生成一堆RSA密钥
-    random_generator = Random.new().read  # 使用 RSA.generate() 生成一个2048位的RSA密钥对。
+def generate_key():  # Generate a pair of RSA keys
+    random_generator = Random.new().read
     rsa = RSA.generate(2048, random_generator)
-    public_key = rsa.publickey().exportKey()  # 将公钥导出成PEM格式并保存到 rsa_public_key.pem 文件
-    private_key = rsa.exportKey()  # rsa.exportKey() 将私钥导出成PEM格式并保存到 rsa_private_key.pem 文件中。
+    public_key = rsa.publickey().exportKey()  # Export public key in PEM format
+    private_key = rsa.exportKey()  # Export private key in PEM format
 
     with open('rsa_private_key.pem', 'wb') as f:
         f.write(private_key)
@@ -23,66 +23,96 @@ def generate_key():  # 生成一堆RSA密钥
         f.write(public_key)
 
 
-def get_key(key_file):  # 从指定文件中读取RSA公钥或私钥。
-    with open(key_file) as f:  # 打开给定的密钥文件并读取内容。
+def get_key(key_file):  # Read RSA public or private key from a file
+    with open(key_file) as f:
         data = f.read()
-        key = RSA.importKey(data)  # 使用 RSA.importKey() 导入密钥，返回一个RSA密钥对象，之后可以在加密、解密、签名和验证操作中使用。
+        key = RSA.importKey(data)
     return key
 
 
-def sign(msg):  # 对消息进行签名。消息签名可以用来证明消息的发送者，并保证消息未被篡改。
-    private_key = get_key('rsa_private_key.pem')  # 读取私钥 rsa_private_key.pem。
-    signer = PKCS1_signature.new(private_key)  # 创建 PKCS1_signature 对象，使用SHA-256哈希函数对消息进行哈希处理
+def sign(msg):  # Sign a message
+    private_key = get_key('rsa_private_key.pem')
+    signer = PKCS1_signature.new(private_key)
     digest = SHA256.new()
-    digest.update(bytes(msg.encode("utf8")))  # 使用私钥对哈希值进行签名并返回签名结果。
+    digest.update(bytes(msg.encode("utf8")))
     return signer.sign(digest)
 
 
-def verify(msg, signature):  # 验证签名。
-    # use signature because the rsa encryption lib adds salt defaultly
-    pub_key = get_key('rsa_public_key.pem')  # 读取公钥 rsa_public_key.pem。
-    signer = PKCS1_signature.new(pub_key)  # 使用SHA-256对消息进行哈希处理，并通过公钥对签名进行验证。
+def verify(msg, signature):  # Verify a signature
+    pub_key = get_key('rsa_public_key.pem')
+    signer = PKCS1_signature.new(pub_key)
     digest = SHA256.new()
-    digest.update(bytes(msg.encode("utf8")))  # 如果签名与消息匹配，则返回 True，否则返回 False。
+    digest.update(bytes(msg.encode("utf8")))
     return signer.verify(digest, signature)
 
 
 def perturb_items(item_ids, perturbation_rate=0.2):
     """
-    对交互物品进行扰动处理。扰动的方式是随机添加和删除部分物品。
+    Perturb the list of items by randomly adding and removing some items.
 
-    :param item_ids: 原始物品列表
-    :param perturbation_rate: 扰动率，默认为20%
-    :return: 扰动后的物品列表
+    :param item_ids: Original list of items
+    :param perturbation_rate: Rate of perturbation, default is 20%
+    :return: Perturbed list of items
     """
     perturbed_items = set(item_ids)
 
-    # 随机删除一定比例的物品
+    # Randomly remove a certain proportion of items
     num_items_to_remove = int(len(item_ids) * perturbation_rate)
-    #print(f"Type of perturbed_items: {type(perturbed_items)}")
     items_to_remove = random.sample(perturbed_items, min(num_items_to_remove, len(perturbed_items)))
     perturbed_items.difference_update(items_to_remove)
 
-    # 随机添加一些虚假的物品ID
+    # Randomly add some fake item IDs
     num_items_to_add = int(len(item_ids) * perturbation_rate)
     fake_items = {f"fake_item_{random.randint(1000, 9999)}" for _ in range(num_items_to_add)}
     perturbed_items.update(fake_items)
 
     return list(perturbed_items)
 
-def encrypt_data(msg):  # 使用公钥对消息进行加密。
-    pub_key = get_key('rsa_public_key.pem')  # 读取公钥 rsa_public_key.pem。
-    cipher = encryptor = PKCS1_OAEP.new(pub_key)  # 创建 PKCS1_OAEP 加密对象（该对象默认使用SHA-256作为哈希函数）。
-    encrypt_text = base64.b64encode(cipher.encrypt(bytes(msg.encode("utf8"))))  # 使用公钥加密消息并通过base64编码返回加密后的字符串。
+
+def encrypt_data(msg):  # Encrypt a message using the public key
+    pub_key = get_key('rsa_public_key.pem')
+    cipher = PKCS1_OAEP.new(pub_key)
+    encrypt_text = base64.b64encode(cipher.encrypt(bytes(msg.encode("utf8"))))
     return encrypt_text.decode('utf-8')
 
 
-def decrypt_data(encrypt_msg):  # 使用私钥对加密后的消息进行解密。
-    private_key = get_key('rsa_private_key.pem')  # 读取私钥 rsa_private_key.pem
-    cipher = PKCS1_OAEP.new(private_key)  # 创建 PKCS1_OAEP 解密对象。
-    back_text = cipher.decrypt(base64.b64decode(encrypt_msg))  # 使用私钥解密通过base64编码的加密消息，并返回解密后的明文消息。
+def decrypt_data(encrypt_msg):  # Decrypt a message using the private key
+    private_key = get_key('rsa_private_key.pem')
+    cipher = PKCS1_OAEP.new(private_key)
+    back_text = cipher.decrypt(base64.b64decode(encrypt_msg))
     return back_text.decode('utf-8')
 
-# 1.密钥生成：首先通过 generate_key() 函数生成公钥和私钥，并将它们分别存储到文件中。
-# 2.签名与验证：使用私钥对消息签名 sign()，生成签名。使用公钥验证签名 verify()，确保消息的完整性和来源。
-# 3.加密与解密：使用公钥加密数据 encrypt_data()，将明文转换为加密的密文。使用私钥解密数据 decrypt_data()，将密文还原为明文，保证数据的保密性。
+
+def encrypt_user_data(user_data):
+    """
+    Encrypt user data (e.g., embeddings) using the public key.
+
+    :param user_data: User data to encrypt
+    :return: Encrypted user data
+    """
+    encrypted_data = []
+    pub_key = get_key('rsa_public_key.pem')
+    cipher = PKCS1_OAEP.new(pub_key)
+    for data in user_data:
+        encrypted_data.append(base64.b64encode(cipher.encrypt(bytes(str(data).encode("utf8")))).decode('utf-8'))
+    return encrypted_data
+
+
+def decrypt_user_data(encrypted_data):
+    """
+    Decrypt user data (e.g., embeddings) using the private key.
+
+    :param encrypted_data: Encrypted user data
+    :return: Decrypted user data
+    """
+    decrypted_data = []
+    private_key = get_key('rsa_private_key.pem')
+    cipher = PKCS1_OAEP.new(private_key)
+    for data in encrypted_data:
+        decrypted_data.append(cipher.decrypt(base64.b64decode(data)).decode('utf-8'))
+    return decrypted_data
+
+# 1. Key Generation: Generate RSA keys using generate_key() and save them in files.
+# 2. Sign and Verify: Use private key to sign messages with sign() and verify the signature using the public key with verify().
+# 3. Encrypt and Decrypt: Encrypt data with encrypt_data() using the public key and decrypt with decrypt_data() using the private key.
+# 4. Encrypt and Decrypt User Data: Encrypt user embeddings using encrypt_user_data() and decrypt them using decrypt_user_data().
