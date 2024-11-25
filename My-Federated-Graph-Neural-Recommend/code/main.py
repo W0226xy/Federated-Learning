@@ -106,7 +106,8 @@ if __name__ == "__main__":
         server.aggregate(param_list=[{
             'model': (list(model_user.parameters()), list(model_item.parameters())),
             'item': (model_item.item_embedding.weight.grad, traini),
-            'user': (model_user.user_embedding.weight.grad, trainu)
+            'user': (model_user.user_embedding.weight.grad, trainu),
+            'num_data_points': len(trainu)  # 添加客户端数据量
         }])
         # Train global GAT
         server.global_graph_training()
@@ -134,4 +135,6 @@ if __name__ == "__main__":
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
+    accuracy = calculate_accuracy(all_preds, all_labels)
     print('rmse:', rmse)
+    print('accuracy:', accuracy)

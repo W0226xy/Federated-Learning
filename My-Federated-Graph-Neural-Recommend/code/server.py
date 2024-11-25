@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
 from torch_geometric.data import Data
+import random
+from sklearn.cluster import KMeans
+from torch.cuda.amp import autocast, GradScaler
 
 
 class Server(nn.Module):
@@ -16,6 +19,9 @@ class Server(nn.Module):
         self.lr = args.lr
         self.weight_decay = args.weight_decay
         self.global_gat = GlobalGraphGAT(user_features.shape[1], 8, user_features.shape[1]).to(self.device)
+        self.prev_gradient_item = torch.zeros_like(self.item_emb.weight)
+        self.prev_gradient_user = torch.zeros_like(self.user_emb.weight)
+        self.scaler = GradScaler()  # Mixed Precision Training Scaler
 
     def aggregate(self, param_list):
         gradient_item = torch.zeros_like(self.item_emb.weight)
@@ -23,10 +29,13 @@ class Server(nn.Module):
         item_count = torch.zeros(self.item_emb.weight.shape[0]).to(self.device)
         user_count = torch.zeros(self.user_emb.weight.shape[0]).to(self.device)
 
+        total_weight = sum(parameter['num_data_points'] for parameter in param_list)
+
         for parameter in param_list:
             model_grad_user, model_grad_item = parameter['model']
             item_grad, returned_items = parameter['item']
             user_grad, returned_users = parameter['user']
+            weight = parameter['num_data_points'] / total_weight
 
             # Debugging information
             print(f"Debug: item_grad size: {item_grad.size()}, returned_items length: {len(returned_items)}")
@@ -52,16 +61,16 @@ class Server(nn.Module):
                 else:
                     user_grad = user_grad[:len(returned_users)]
 
-            item_count[returned_items] += 1
-            user_count[returned_users] += 1
+            item_count[returned_items] += weight
+            user_count[returned_users] += weight
 
             if gradient_item.size(1) != item_grad.size(1):
                 item_grad = F.pad(item_grad, (0, gradient_item.size(1) - item_grad.size(1)), 'constant', 0)
-            gradient_item[returned_items] += item_grad
+            gradient_item[returned_items] += weight * item_grad
 
             if gradient_user.size(1) != user_grad.size(1):
                 user_grad = F.pad(user_grad, (0, gradient_user.size(1) - user_grad.size(1)), 'constant', 0)
-            gradient_user[returned_users] += user_grad
+            gradient_user[returned_users] += weight * user_grad
 
         item_count[item_count == 0] = 1
         user_count[user_count == 0] = 1
@@ -79,41 +88,85 @@ class Server(nn.Module):
             self.item_emb.weight -= self.lr * gradient_item + self.weight_decay * self.item_emb.weight
             self.user_emb.weight -= self.lr * gradient_user + self.weight_decay * self.user_emb.weight
 
-    def construct_global_graph(self):
+    def construct_global_graph(self, selected_clients):
         x = torch.cat([self.user_emb.weight, self.item_emb.weight], dim=0).to(self.device)
         num_users = self.user_emb.weight.shape[0]
         user_item_edges = []
-        for client in self.client_list:
+        for client in selected_clients:
             interactions = client.get_interactions()
             for user, item in interactions:
                 user_item_edges.extend([[user, num_users + item], [num_users + item, user]])
-
-        if len(user_item_edges) == 0:
+        if not user_item_edges:
             print("Warning: user_item_edges is empty. Adding self-loops to prevent empty edge index.")
-            for i in range(num_users):
-                user_item_edges.append([i, i])
-
         edge_index = torch.tensor(user_item_edges, dtype=torch.long).t().contiguous().to(self.device)
+
+        # 使用节点聚类的方法，根据节点特征的相似性来添加额外的边
+        kmeans = KMeans(n_clusters=10, random_state=42).fit(x.cpu().detach().numpy())
+        cluster_labels = kmeans.labels_
+        cluster_dict = {}
+        for idx, label in enumerate(cluster_labels):
+            if label not in cluster_dict:
+                cluster_dict[label] = []
+            cluster_dict[label].append(idx)
+
+        additional_edges = []
+        for nodes in cluster_dict.values():
+            for i in range(len(nodes)):
+                for j in range(i + 1, len(nodes)):
+                    additional_edges.append([nodes[i], nodes[j]])
+                    additional_edges.append([nodes[j], nodes[i]])
+        if additional_edges:
+            additional_edge_index = torch.tensor(additional_edges, dtype=torch.long).t().contiguous().to(self.device)
+            edge_index = torch.cat([edge_index, additional_edge_index], dim=1)
+
         return Data(x=x, edge_index=edge_index).to(self.device)
 
     def global_graph_training(self):
-        global_graph = self.construct_global_graph()
+        if len(self.client_list) < 5:
+            print("Warning: Not enough clients to sample. Reducing CLIENTS_PER_ROUND to available clients.")
+            selected_clients = self.client_list
+        else:
+            selected_clients = random.sample(self.client_list, min(5, len(self.client_list)))  # 每轮随机选择最多 5 个客户端
+        global_graph = self.construct_global_graph(selected_clients)
         optimizer = torch.optim.Adam(self.global_gat.parameters(), lr=self.lr)
         self.global_gat.train()
         for epoch in range(50):
             optimizer.zero_grad()
-            out = self.global_gat(global_graph.x, global_graph.edge_index)
-            loss = F.mse_loss(out, global_graph.x)
-            loss.backward()
-            optimizer.step()
+            torch.cuda.empty_cache()  # Clear unused cache
+            with autocast():
+                out = self.global_gat(global_graph.x, global_graph.edge_index)
+                loss = F.mse_loss(out, global_graph.x)
+            self.scaler.scale(loss).backward()
+            self.scaler.step(optimizer)
+            self.scaler.update()
             print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
         num_users = self.user_emb.weight.shape[0]
         self.user_emb.weight.data = out[:num_users]
         self.item_emb.weight.data = out[num_users:]
 
+    def local_fine_tuning(self, client):
+        # 每个客户端对全局模型进行本地微调
+        local_model_user = self.model_user
+        local_model_item = self.model_item
+        optimizer = torch.optim.SGD(list(local_model_user.parameters()) + list(local_model_item.parameters()), lr=self.lr)
+        local_model_user.train()
+        local_model_item.train()
+        for epoch in range(10):  # 假设每个客户端进行 10 轮本地训练
+            for user_ids, item_ids, labels in client.get_local_data():
+                optimizer.zero_grad()
+                output_user = local_model_user(user_ids, item_ids)
+                output_item = local_model_item(user_ids, item_ids)
+                loss_user = F.mse_loss(output_user, labels)
+                loss_item = F.mse_loss(output_item, labels)
+                loss = (loss_user + loss_item) / 2
+                loss.backward()
+                optimizer.step()
+
     def distribute(self, client_list):
         for client in client_list:
             client.update(self.model_user, self.model_item, self.user_emb.weight, self.item_emb.weight)
+            # 每个客户端进行本地微调
+            self.local_fine_tuning(client)
 
 
 class GlobalGraphGAT(nn.Module):

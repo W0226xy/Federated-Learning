@@ -39,3 +39,27 @@ def calculate_accuracy(preds, labels, threshold=0.5):
     total = len(labels)
     accuracy = correct / total
     return accuracy
+
+def log_client_contributions(client_data_sizes, aggregated_weights):
+    """
+    Log the contribution of each client based on data size and aggregation weights.
+
+    :param client_data_sizes: A dictionary where keys are client IDs and values are the number of data points each client has.
+    :param aggregated_weights: A dictionary where keys are client IDs and values are the weights used in aggregation.
+    """
+    print("Client Contributions During Aggregation:")
+    for client_id in client_data_sizes:
+        data_size = client_data_sizes[client_id]
+        weight = aggregated_weights.get(client_id, 0)
+        print(f"Client {client_id}: Data Size = {data_size}, Aggregation Weight = {weight}")
+
+def calculate_aggregation_weights(client_data_sizes):
+    """
+    Calculate weights for each client based on the amount of data they contribute.
+
+    :param client_data_sizes: A dictionary where keys are client IDs and values are the number of data points each client has.
+    :return: A dictionary where keys are client IDs and values are the calculated aggregation weights.
+    """
+    total_data_points = sum(client_data_sizes.values())
+    weights = {client_id: data_size / total_data_points for client_id, data_size in client_data_sizes.items()}
+    return weights

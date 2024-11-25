@@ -110,3 +110,6 @@ def generate_local_test_data(Otest, M, clients):  # Generate test data for each 
         testlabel = np.array(testlabel, dtype='float32')
         local_test_data[client_id] = (testu, testi, testlabel)
     return local_test_data
+
+def split_data_among_clients(data, num_clients):  # Randomly split data among clients
+    return [data[i::num_clients] for i in range(num_clients)]
