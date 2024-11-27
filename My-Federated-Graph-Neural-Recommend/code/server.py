@@ -4,8 +4,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATConv
 from torch_geometric.data import Data
 import random
+from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import KMeans
 from torch.cuda.amp import autocast, GradScaler
+import numpy as np
 
 
 class Server(nn.Module):
@@ -100,21 +102,17 @@ class Server(nn.Module):
             print("Warning: user_item_edges is empty. Adding self-loops to prevent empty edge index.")
         edge_index = torch.tensor(user_item_edges, dtype=torch.long).t().contiguous().to(self.device)
 
-        # 使用节点聚类的方法，根据节点特征的相似性来添加额外的边
-        kmeans = KMeans(n_clusters=10, random_state=42).fit(x.cpu().detach().numpy())
-        cluster_labels = kmeans.labels_
-        cluster_dict = {}
-        for idx, label in enumerate(cluster_labels):
-            if label not in cluster_dict:
-                cluster_dict[label] = []
-            cluster_dict[label].append(idx)
+        # 使用 KNN 方法，根据节点特征的相似性来添加额外的边，使用距离阈值过滤邻居
+        knn = NearestNeighbors(n_neighbors=10, metric='cosine').fit(x.cpu().detach().numpy())
+        knn_distances, knn_indices = knn.kneighbors(x.cpu().detach().numpy())
 
+        distance_threshold = 0.3  # 设置一个距离阈值
         additional_edges = []
-        for nodes in cluster_dict.values():
-            for i in range(len(nodes)):
-                for j in range(i + 1, len(nodes)):
-                    additional_edges.append([nodes[i], nodes[j]])
-                    additional_edges.append([nodes[j], nodes[i]])
+        for idx, (neighbors, distances) in enumerate(zip(knn_indices, knn_distances)):
+            for neighbor, distance in zip(neighbors, distances):
+                if idx != neighbor and distance < distance_threshold:  # Prevent self-loop and use threshold
+                    additional_edges.append([idx, neighbor])
+                    additional_edges.append([neighbor, idx])
         if additional_edges:
             additional_edge_index = torch.tensor(additional_edges, dtype=torch.long).t().contiguous().to(self.device)
             edge_index = torch.cat([edge_index, additional_edge_index], dim=1)
@@ -128,9 +126,15 @@ class Server(nn.Module):
         else:
             selected_clients = random.sample(self.client_list, min(5, len(self.client_list)))  # 每轮随机选择最多 5 个客户端
         global_graph = self.construct_global_graph(selected_clients)
-        optimizer = torch.optim.Adam(self.global_gat.parameters(), lr=self.lr)
+        optimizer = torch.optim.AdamW(self.global_gat.parameters(), lr=self.lr)
         self.global_gat.train()
-        for epoch in range(50):
+
+        # Early stopping parameters
+        patience = 10
+        best_loss = np.inf
+        patience_counter = 0
+
+        for epoch in range(100):
             optimizer.zero_grad()
             torch.cuda.empty_cache()  # Clear unused cache
             with autocast():
@@ -140,6 +144,18 @@ class Server(nn.Module):
             self.scaler.step(optimizer)
             self.scaler.update()
             print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
+
+            # Early stopping check
+            if loss.item() < best_loss:
+                best_loss = loss.item()
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch + 1}, best loss: {best_loss}")
+                break
+
         num_users = self.user_emb.weight.shape[0]
         self.user_emb.weight.data = out[:num_users]
         self.item_emb.weight.data = out[num_users:]
@@ -148,7 +164,7 @@ class Server(nn.Module):
         # 每个客户端对全局模型进行本地微调
         local_model_user = self.model_user
         local_model_item = self.model_item
-        optimizer = torch.optim.SGD(list(local_model_user.parameters()) + list(local_model_item.parameters()), lr=self.lr)
+        optimizer = torch.optim.AdamW(list(local_model_user.parameters()) + list(local_model_item.parameters()), lr=self.lr)
         local_model_user.train()
         local_model_item.train()
         for epoch in range(10):  # 假设每个客户端进行 10 轮本地训练
