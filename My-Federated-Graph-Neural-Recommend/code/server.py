@@ -42,44 +42,43 @@ class Server(nn.Module):
             weight = parameter['num_data_points'] / total_weight
 
             # Debugging information
+            print(f"Debug: item_grad = {item_grad}, returned_items = {returned_items}")
+            print(f"Debug: user_grad = {user_grad}, returned_users = {returned_users}")
+
+            # 检查 item_grad 和 user_grad 是否为 None
             if item_grad is not None:
-                print(f"Debug: item_grad size: {item_grad.size()}, returned_items length: {len(returned_items)}")
+                num_batches_item = (len(returned_items) + batch_size - 1) // batch_size  # 计算物品批次数
+                for batch_idx in range(num_batches_item):
+                    start_idx_item = batch_idx * batch_size
+                    end_idx_item = min((batch_idx + 1) * batch_size, len(returned_items))
+                    batch_items = returned_items[start_idx_item:end_idx_item]
+                    batch_item_grad = item_grad[start_idx_item:end_idx_item]
+
+                    # Update item embeddings
+                    item_count[batch_items] += weight
+                    gradient_item[batch_items] += weight * batch_item_grad
             else:
-                print("Debug: item_grad is None")
+                print("Warning: item_grad is None, skipping gradient update for items.")
+
             if user_grad is not None:
-                print(f"Debug: user_grad size: {user_grad.size()}, returned_users length: {len(returned_users)}")
+                num_batches_user = (len(returned_users) + batch_size - 1) // batch_size  # 计算用户批次数
+                for batch_idx in range(num_batches_user):
+                    start_idx_user = batch_idx * batch_size
+                    end_idx_user = min((batch_idx + 1) * batch_size, len(returned_users))
+                    batch_users = returned_users[start_idx_user:end_idx_user]
+                    batch_user_grad = user_grad[start_idx_user:end_idx_user]
+
+                    # Update user embeddings
+                    user_count[batch_users] += weight
+                    gradient_user[batch_users] += weight * batch_user_grad
             else:
-                print("Debug: user_grad is None")
-
-            # 小批量处理
-            num_batches_item = (len(returned_items) + batch_size - 1) // batch_size  # 计算物品批次数
-            num_batches_user = (len(returned_users) + batch_size - 1) // batch_size  # 计算用户批次数
-
-            for batch_idx in range(num_batches_item):
-                start_idx_item = batch_idx * batch_size
-                end_idx_item = min((batch_idx + 1) * batch_size, len(returned_items))
-                batch_items = returned_items[start_idx_item:end_idx_item]
-                batch_item_grad = item_grad[start_idx_item:end_idx_item]
-
-                # Update item embeddings
-                item_count[batch_items] += weight
-                gradient_item[batch_items] += weight * batch_item_grad
-
-            for batch_idx in range(num_batches_user):
-                start_idx_user = batch_idx * batch_size
-                end_idx_user = min((batch_idx + 1) * batch_size, len(returned_users))
-                batch_users = returned_users[start_idx_user:end_idx_user]
-                batch_user_grad = user_grad[start_idx_user:end_idx_user]
-
-                # Update user embeddings
-                user_count[batch_users] += weight
-                gradient_user[batch_users] += weight * batch_user_grad
+                print("Warning: user_grad is None, skipping gradient update for users.")
 
         # Normalize gradients by counts
-        item_count[item_count == 0] = 1
-        user_count[user_count == 0] = 1
-        gradient_item /= item_count.unsqueeze(1)
-        gradient_user /= user_count.unsqueeze(1)
+        item_count[item_count == 0] = 1  # 防止除以零
+        user_count[user_count == 0] = 1  # 防止除以零
+        gradient_item /= item_count.unsqueeze(1)  # 按照每个用户的数量进行归一化
+        gradient_user /= user_count.unsqueeze(1)  # 按照每个物品的数量进行归一化
 
         # Update model parameters
         for param, grad in zip(self.model_user.parameters(), model_grad_user):

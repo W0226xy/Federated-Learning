@@ -1,11 +1,11 @@
 # main.py
 
 from utils import *
-from encrypt import *
+# from encrypt import *
 from model import *
 from preprocess import *
 from expansion import *
-from generator import *
+# from generator import *
 from const import *
 import numpy as np
 import random
