@@ -1,12 +1,29 @@
-import torch
+# client.py
 
+import torch
+from torch.utils.data import DataLoader
 
 class Client:
-    def __init__(self, client_id, data, model, device):
+    def __init__(self, client_id, data, model, device, batch_size=32):
         self.client_id = client_id
         self.data = data
         self.model = model
         self.device = device
+        self.batch_size = batch_size
+        self.data_loader = DataLoader(self.data, batch_size=self.batch_size, shuffle=True)
+
+    def get_interactions(self):
+        # Assuming `self.data` contains tuples of (user_id, item_id, label) or (user_id, item_id)
+        interactions = []
+        for data_point in self.data:
+            if len(data_point) == 3:
+                user_id, item_id, label = data_point
+            elif len(data_point) == 2:
+                user_id, item_id = data_point
+            else:
+                raise ValueError("Unexpected data format in client data")
+            interactions.append((user_id, item_id))
+        return interactions
 
     def train(self, epochs, lr):
         # 使用本地数据在客户端模型上进行训练
@@ -15,7 +32,8 @@ class Client:
         criterion = torch.nn.MSELoss()
 
         for epoch in range(epochs):
-            for user_ids, item_ids, labels in self.data:
+            for batch in self.data_loader:
+                user_ids, item_ids, labels = batch
                 user_ids = user_ids.to(self.device)
                 item_ids = item_ids.to(self.device)
                 labels = labels.to(self.device)

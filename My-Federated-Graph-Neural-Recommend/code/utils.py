@@ -1,9 +1,18 @@
+# utils.py
+
 import h5py
 import numpy as np
 import scipy as sp
 from encrypt import encrypt_user_data, decrypt_user_data
+import torch
 
-def load_matlab_file(path_file, name_field, encrypt_data_flag=False):
+# Function to add differential privacy noise to embeddings
+def add_differential_privacy_noise(data, epsilon=1.0, sensitivity=1.0):
+    noise_scale = sensitivity / epsilon
+    noise = np.random.laplace(0, noise_scale, data.shape)
+    return data + noise
+
+def load_matlab_file(path_file, name_field, encrypt_data_flag=False, dp_flag=False, epsilon=1.0):
     db = h5py.File(path_file, 'r')
     ds = db[name_field]
     try:
@@ -22,6 +31,10 @@ def load_matlab_file(path_file, name_field, encrypt_data_flag=False):
     # Encrypt data if flag is set
     if encrypt_data_flag:
         out = encrypt_user_data(out)
+
+    # Add differential privacy noise if flag is set
+    if dp_flag:
+        out = add_differential_privacy_noise(out, epsilon=epsilon)
 
     return out
 
