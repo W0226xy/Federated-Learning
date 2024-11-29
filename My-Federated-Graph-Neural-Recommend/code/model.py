@@ -50,31 +50,33 @@ class GraphRecommendationModel(nn.Module):
         self.neighbor_gat = nn.Linear(2 * hidden_dim, 1)
 
     def forward(self, user_ids, item_ids, history=None, neighbor_emb=None):
+        # 确保所有输入都在相同设备上
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         # 获取用户和物品的嵌入
-        user_emb = self.user_embedding(user_ids)
-        item_emb = self.item_embedding(item_ids)
+        user_emb = self.user_embedding(user_ids).to(device)  # 转移到设备
+        item_emb = self.item_embedding(item_ids).to(device)  # 转移到设备
         print(f"user_emb.shape: {user_emb.shape}, item_emb.shape: {item_emb.shape}")  # 调试：打印用户和物品的嵌入
 
         if history is not None and neighbor_emb is not None:
-            # 历史嵌入
-            history_emb = self.item_embedding(history)
+            # 计算历史嵌入
+            history_emb = self.item_embedding(history).to(device)  # 转移到设备
             history_emb_expanded = history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1)
             real_attention_inputs = torch.cat(
                 (history_emb_expanded, history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1)), dim=-1)
             real_attention_scores = F.relu(
-                self.real_interaction_gat(real_attention_inputs.view(-1, 2 * history_emb.size(-1))))
+                self.real_interaction_gat(real_attention_inputs.view(-1, 2 * history_emb.size(-1)))).to(device)
             real_attention_weights = F.softmax(
                 real_attention_scores.view(history_emb.size(0), history_emb.size(1), history_emb.size(1)), dim=-1)
             aggregated_real_history_emb = (real_attention_weights.unsqueeze(-1) * history_emb.unsqueeze(2)).sum(dim=-2)
             print(f"aggregated_real_history_emb.shape: {aggregated_real_history_emb.shape}")  # 调试：打印历史聚合后的嵌入
 
+            # 如果邻居嵌入的维度不够，填充邻居嵌入
             if neighbor_emb.dim() < 4:
-                # 如果邻居嵌入的维度不够，填充邻居嵌入
                 mean_value = history_emb.mean(dim=1)
                 neighbor_emb = mean_value.unsqueeze(1).unsqueeze(2).expand(user_ids.size(0), history.size(1), 100,
                                                                            history_emb.size(-1))
 
-            # 填充邻居嵌入
             padding_size = history_emb.size(-1) - neighbor_emb.size(-1)
             if padding_size > 0:
                 neighbor_emb = F.pad(neighbor_emb, (0, padding_size), "constant", 0)
@@ -84,7 +86,7 @@ class GraphRecommendationModel(nn.Module):
                 (aggregated_real_history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb.size(2), -1), neighbor_emb),
                 dim=-1)
             neighbor_attention_scores = F.relu(
-                self.neighbor_gat(neighbor_attention_inputs.view(-1, 2 * history_emb.size(-1))))
+                self.neighbor_gat(neighbor_attention_inputs.view(-1, 2 * history_emb.size(-1)))).to(device)
             neighbor_attention_weights = F.softmax(
                 neighbor_attention_scores.view(neighbor_emb.size(0), neighbor_emb.size(1), neighbor_emb.size(2)),
                 dim=-1)
@@ -97,30 +99,28 @@ class GraphRecommendationModel(nn.Module):
                 multihead_embs_real) > 0 else aggregated_emb_real
             print(f"aggregated_emb_real.shape after multihead_proj: {aggregated_emb_real.shape}")
 
-            # 合并聚合后的嵌入
             aggregated_emb = aggregated_real_history_emb.mean(dim=1) + aggregated_emb_real.mean(dim=1)
             print(f"aggregated_emb.shape: {aggregated_emb.shape}")  # 调试：打印合并后的嵌入
-
-            # 合并用户、物品和聚合的嵌入
             combined_emb = torch.cat([user_emb, aggregated_emb, item_emb], dim=-1)
         else:
             # 如果没有历史和邻居嵌入，则仅使用用户和物品嵌入
             combined_emb = torch.cat([user_emb, item_emb], dim=-1)
 
         # 通过 fc1 层
-        combined_emb = F.relu(self.fc1(combined_emb))
-        print(f"combined_emb.shape after fc1: {combined_emb.shape}")  # 调试：打印经过 fc1 后的嵌入
+        combined_emb = F.relu(self.fc1(combined_emb)).to(device)  # 确保转移到设备
+        print(f"combined_emb.shape after fc1: {combined_emb.shape}")
 
         # 通过 dropout 层
         combined_emb = self.dropout(combined_emb)
 
         # 通过 fc2 层
-        combined_emb = F.relu(self.fc2(combined_emb))  # 保留 fc2 层
-        print(f"combined_emb.shape after fc2: {combined_emb.shape}")  # 调试：打印经过 fc2 后的嵌入
+        combined_emb = F.relu(self.fc2(combined_emb)).to(device)  # 确保转移到设备
+        print(f"combined_emb.shape after fc2: {combined_emb.shape}")
 
         # 最后的输出层
-        output = torch.sigmoid(self.output_layer(combined_emb))
-        print(f"output.shape: {output.shape}")  # 调试：打印最终输出的形状
+        output = torch.sigmoid(self.output_layer(combined_emb)).to(device)  # 确保转移到设备
+        print(f"output.shape: {output.shape}")
 
         return output.squeeze()  # 返回最终的输出
+
 

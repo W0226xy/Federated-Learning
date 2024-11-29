@@ -171,72 +171,53 @@ class Server(nn.Module):
     from torch.cuda.amp import autocast, GradScaler
 
     def global_graph_training(self):
-        # 确保客户端数量足够
         if len(self.client_list) < 5:
             print("Warning: Not enough clients to sample. Reducing CLIENTS_PER_ROUND to available clients.")
             selected_clients = self.client_list
         else:
-            selected_clients = random.sample(self.client_list, min(5, len(self.client_list)))  # 每轮随机选择最多5个客户端
+            selected_clients = random.sample(self.client_list, min(5, len(self.client_list)))  # 每轮随机选择最多 5 个客户端
 
-        # 构建全局图
-        global_graph = self.construct_global_graph(selected_clients)
+        global_graph = self.construct_global_graph(selected_clients)  # 构建全局图
         optimizer = torch.optim.AdamW(self.global_gat.parameters(), lr=self.lr)
         self.global_gat.train()
 
-        # 初始化混合精度训练
-        self.scaler = GradScaler()  # 初始化混合精度训练的Scaler
+        # 确保模型在正确的设备上
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.global_gat = self.global_gat.to(device)  # 将模型移到设备上
+
+        # Early stopping parameters
         patience = 10
-        best_loss = float('inf')
+        best_loss = np.inf
         patience_counter = 0
 
-        # Mini-batch 处理
+        # Mini-batch processing
         batch_size = 64  # 设置批量大小
-        num_users = global_graph.x.shape[0]  # 获取节点数量
+        num_users = global_graph.x.shape[0]
         num_batches = num_users // batch_size
         if num_users % batch_size != 0:
-            num_batches += 1  # 如果不能整除，增加一个批次
+            num_batches += 1  # 如果不能整除，则增加一个批次
 
-        # 训练100个epoch
-        for epoch in range(100):
+        for epoch in range(100):  # 迭代训练
             optimizer.zero_grad()
-            torch.cuda.empty_cache()  # 清理显存
-
-            # 开启自动混合精度训练
-            with autocast():  # 使用自动混合精度加速
-                epoch_loss = 0  # 初始化当前epoch的总损失
+            torch.cuda.empty_cache()  # 清除未使用的缓存
+            with torch.amp.autocast('cuda'):  # 使用自动混合精度加速
                 for batch_idx in range(num_batches):
                     start_idx = batch_idx * batch_size
                     end_idx = min((batch_idx + 1) * batch_size, num_users)
+                    batch_x = global_graph.x[start_idx:end_idx].to(device)  # 将数据移到同一个设备
+                    batch_edge_index = global_graph.edge_index[:, start_idx:end_idx].to(device)  # 同上
 
-                    # 提取当前批次的数据
-                    batch_x = global_graph.x[start_idx:end_idx]
-                    batch_edge_index = global_graph.edge_index[:, start_idx:end_idx]
-
-                    # 检查数据形状
-                    print(f"Batch {batch_idx + 1}/{num_batches}")
-                    print(f"batch_x shape: {batch_x.shape}")
-                    print(f"batch_edge_index shape: {batch_edge_index.shape}")
-
-                    # 前向传播
-                    out = self.global_gat(batch_x, batch_edge_index)
-
-                    # 损失计算，假设目标是节点特征本身（自监督任务）
-                    loss = F.mse_loss(out, batch_x)
-                    epoch_loss += loss.item()  # 累加损失
-
-                    # 反向传播
-                    self.scaler.scale(loss).backward()  # 使用混合精度反向传播
-
-                # 更新参数
+                    out = self.global_gat(batch_x, batch_edge_index)  # 前向计算
+                    loss = F.mse_loss(out, batch_x)  # 损失计算
+                    self.scaler.scale(loss).backward()  # 反向传播
                 self.scaler.step(optimizer)  # 更新优化器
                 self.scaler.update()  # 更新混合精度
 
-            # 输出当前epoch的损失
-            print(f"Epoch {epoch + 1}, Loss: {epoch_loss / num_batches:.4f}")
+            print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
 
-            # 提前停止检查
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
+            # Early stopping check
+            if loss.item() < best_loss:
+                best_loss = loss.item()
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -245,14 +226,9 @@ class Server(nn.Module):
                 print(f"Early stopping at epoch {epoch + 1}, best loss: {best_loss}")
                 break
 
-        # 更新用户和物品嵌入
-        num_users = self.user_emb.weight.shape[0]  # 获取用户数量
+        num_users = self.user_emb.weight.shape[0]
         self.user_emb.weight.data = out[:num_users]  # 更新用户嵌入
         self.item_emb.weight.data = out[num_users:]  # 更新物品嵌入
-
-        # 输出最后更新的嵌入
-        print(f"Updated user embeddings shape: {self.user_emb.weight.shape}")
-        print(f"Updated item embeddings shape: {self.item_emb.weight.shape}")
 
     def local_fine_tuning(self, client):
         # 每个客户端对全局模型进行本地微调
