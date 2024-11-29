@@ -106,6 +106,13 @@ if __name__ == "__main__":
                 loss = loss_user
                 loss.backward()  # Backward propagation
 
+                #打印每个参数的梯度
+                for name, param in client.model.named_parameters():
+                    if param.grad is None:
+                        print(f"Warning: {name} has no gradient.")
+                    else:
+                        print(f"{name} grad: {param.grad.sum().item()}")  # 打印梯度的和
+                
                 # Add differential privacy noise
                 with torch.no_grad():
                     for param in client.model.parameters():
