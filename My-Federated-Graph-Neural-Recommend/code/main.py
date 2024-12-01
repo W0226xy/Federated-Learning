@@ -112,7 +112,7 @@ if __name__ == "__main__":
                         print(f"Warning: {name} has no gradient.")
                     else:
                         print(f"{name} grad: {param.grad.sum().item()}")  # 打印梯度的和
-                
+
                 # Add differential privacy noise
                 with torch.no_grad():
                     for param in client.model.parameters():

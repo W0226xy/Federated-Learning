@@ -8,6 +8,7 @@ from torch.cuda.amp import GradScaler
 import numpy as np
 import random
 from sklearn.neighbors import NearestNeighbors
+from torch_geometric.utils import subgraph
 
 # Server 类
 class Server(nn.Module):
@@ -20,7 +21,7 @@ class Server(nn.Module):
         self.item_emb = nn.Embedding.from_pretrained(torch.Tensor(item_features), freeze=False).to(self.device)
         self.lr = args.lr
         self.weight_decay = args.weight_decay
-        self.global_gat = GlobalGraphGAT(user_features.shape[1], 8, user_features.shape[1]).to(self.device)
+        self.global_gat = GlobalGraphGAT(input_dim=16, hidden_dim=8, output_dim=16, num_heads=4).to(self.device)
         self.prev_gradient_item = torch.zeros_like(self.item_emb.weight)
         self.prev_gradient_user = torch.zeros_like(self.user_emb.weight)
         self.scaler = GradScaler()  # Mixed Precision Training Scaler
@@ -75,7 +76,6 @@ class Server(nn.Module):
             self.user_emb.weight -= self.lr * gradient_user + self.weight_decay * self.user_emb.weight
 
 
-
     def construct_global_graph(self, selected_clients, k_neighbors=10):
         """
         使用用户嵌入和物品嵌入构建全局图，使用 KNN 查找每个用户的最相似的物品
@@ -125,13 +125,13 @@ class Server(nn.Module):
                     else:
                         print(f"Skipping invalid edge ({i}, {num_users + idx}) due to invalid index.")
 
-        # 创建图的数据结构
+            # 创建图的数据结构
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()  # 转置为 (2, num_edges)
         edge_attr = torch.tensor(edge_weights, dtype=torch.float)  # 边的权重
 
         # 检查边索引是否有效
         num_nodes = num_users + num_items
-        if (edge_index >= num_nodes).any():
+        if (edge_index >= num_nodes).any() or (edge_index < 0).any():
             print(f"Invalid edge_index detected: {edge_index}")
             raise ValueError(
                 f"Invalid edge index detected! Ensure that all edge indices are within the valid range of nodes (0 to {num_nodes - 1}).")
@@ -144,6 +144,7 @@ class Server(nn.Module):
 
         print("Graph construction completed.")
         return global_graph
+
 
     def global_graph_training(self):
         if len(self.client_list) < 5:
@@ -167,62 +168,64 @@ class Server(nn.Module):
 
         # Mini-batch processing
         batch_size = 64  # 设置批量大小
-        num_users = global_graph.x.shape[0]
-        num_batches = num_users // batch_size
-        if num_users % batch_size != 0:
+        num_nodes = global_graph.x.shape[0]
+        num_batches = num_nodes // batch_size
+        if num_nodes % batch_size != 0:
             num_batches += 1  # 如果不能整除，则增加一个批次
 
         for epoch in range(100):  # 迭代训练
-            optimizer.zero_grad()
-            torch.cuda.empty_cache()  # 清除未使用的缓存
-            with torch.amp.autocast('cuda'):  # 使用自动混合精度加速
-                for batch_idx in range(num_batches):
-                    start_idx = batch_idx * batch_size
-                    end_idx = min((batch_idx + 1) * batch_size, num_users)
-                    batch_x = global_graph.x[start_idx:end_idx].to(device)  # 将数据移到同一个设备
-                    batch_edge_index = global_graph.edge_index[:, start_idx:end_idx].to(device)  # 同上
+            total_loss = 0
+            for batch_idx in range(num_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min((batch_idx + 1) * batch_size, num_nodes)
 
-                    # 1. 确保 edge_index 在合法范围内
-                    num_nodes = batch_x.shape[0]  # batch_x 的第一个维度应该是节点的总数
-                    batch_edge_index = map_to_valid_range(batch_edge_index, num_nodes)
+                # 获取当前批次的节点索引
+                batch_nodes = torch.arange(start_idx, end_idx, dtype=torch.long)
 
-                    # 2. 检查 edge_index 是否越界
-                    if (batch_edge_index >= num_nodes).any():
-                        print(f"Invalid edge_index detected: {batch_edge_index}")
-                        raise ValueError(
-                            f"Invalid edge index detected! Ensure that all edge indices are within the valid range of nodes (0 to {num_nodes - 1}).")
+                # 使用 subgraph 方法确保边和节点的一致性
+                batch_edge_index, batch_edge_attr = subgraph(batch_nodes, global_graph.edge_index, relabel_nodes=True)
 
-                    # 前向计算
-                    out = self.global_gat(batch_x, batch_edge_index)  # 前向计算
+                # 获取当前批次的节点特征
+                batch_x = global_graph.x[batch_nodes].to(device)
+                batch_edge_index = batch_edge_index.to(device)
 
-                    # 3. 检查 alpha 是否包含 NaN 或 inf
-                    if torch.isnan(out).any():
-                        raise ValueError("NaN detected in output.")
-                    if torch.isinf(out).any():
-                        raise ValueError("Infinity detected in output.")
+                # 设备检查
+                batch_x = batch_x.to(device)
+                batch_edge_index = batch_edge_index.to(device)
 
-                    loss = F.mse_loss(out, batch_x)  # 损失计算
-                    self.scaler.scale(loss).backward()  # 反向传播
-                self.scaler.step(optimizer)  # 更新优化器
-                self.scaler.update()  # 更新混合精度
+                optimizer.zero_grad()
+                out = self.global_gat(batch_x, batch_edge_index)
 
-            print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
+                # 损失计算
+                loss = F.mse_loss(out, batch_x)
+                self.scaler.scale(loss).backward()
+                self.scaler.step(optimizer)
+                self.scaler.update()
+
+                total_loss += loss.item()
+
+            print(f"Epoch {epoch + 1}, Loss: {total_loss:.4f}")
 
             # Early stopping check
-            if loss.item() < best_loss:
-                best_loss = loss.item()
+            if total_loss < best_loss:
+                best_loss = total_loss
                 patience_counter = 0
             else:
                 patience_counter += 1
 
             if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch + 1}, best loss: {best_loss}")
+                print(f"Early stopping at epoch {epoch + 1}, best loss: {best_loss:.4f}")
                 break
+
+            if 'out' in locals() and out is not None:
+                return out  # 确保返回训练的最终输出
+            else:
+                print("Warning: No output generated from global graph training.")
+                return None
 
         num_users = self.user_emb.weight.shape[0]
         self.user_emb.weight.data = out[:num_users]  # 更新用户嵌入
         self.item_emb.weight.data = out[num_users:]  # 更新物品嵌入
-
 
 # GlobalGraphGAT 类
 class GlobalGraphGAT(nn.Module):
@@ -235,13 +238,17 @@ class GlobalGraphGAT(nn.Module):
         print(f"x.shape: {x.shape}")  # 查看输入特征的形状
         print(f"edge_index.shape: {edge_index.shape}")  # 查看边的索引形状
 
-        x = F.relu(self.gat1(x, edge_index))  # 第一层 GAT
+        # 第一层 GAT
+        x = F.relu(self.gat1(x, edge_index))
         print(f"After gat1, x.shape: {x.shape}")  # 查看经过 gat1 后的形状
 
-        x = self.gat2(x, edge_index)  # 第二层 GAT
+        # 第二层 GAT
+        x = self.gat2(x, edge_index)
         print(f"After gat2, x.shape: {x.shape}")  # 查看经过 gat2 后的形状
 
         return x
+
+
 
 
 def map_to_valid_range(edge_index, num_nodes):
