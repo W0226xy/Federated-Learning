@@ -25,7 +25,17 @@ class Server(nn.Module):
         self.prev_gradient_item = torch.zeros_like(self.item_emb.weight)
         self.prev_gradient_user = torch.zeros_like(self.user_emb.weight)
         self.scaler = GradScaler()  # Mixed Precision Training Scaler
+        self.global_user_embeddings = None
+        self.global_item_embeddings = None
 
+    def distribute_global_embeddings_to_clients(self):
+        """
+        Distribute the global embeddings (user and item) to each client.
+        """
+        for client in self.client_list:
+            # Distribute the global user and item embeddings
+            client.model.user_embedding.weight.data = self.model_user.user_embedding.weight.data.clone()
+            client.model.item_embedding.weight.data = self.model_item.item_embedding.weight.data.clone()
     def aggregate(self, param_list, batch_size=64):
         # 聚合客户端更新的模型参数和梯度
         gradient_item = torch.zeros_like(self.item_emb.weight)
@@ -145,8 +155,10 @@ class Server(nn.Module):
         print("Graph construction completed.")
         return global_graph
 
-
     def global_graph_training(self):
+        """
+        执行全局图训练（如 GAT）并更新全局嵌入。
+        """
         if len(self.client_list) < 5:
             print("Warning: Not enough clients to sample. Reducing CLIENTS_PER_ROUND to available clients.")
             selected_clients = self.client_list
@@ -160,11 +172,6 @@ class Server(nn.Module):
         # 确保模型在正确的设备上
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.global_gat = self.global_gat.to(device)  # 将模型移到设备上
-
-        # Early stopping parameters
-        patience = 10
-        best_loss = np.inf
-        patience_counter = 0
 
         # Mini-batch processing
         batch_size = 64  # 设置批量大小
@@ -189,10 +196,6 @@ class Server(nn.Module):
                 batch_x = global_graph.x[batch_nodes].to(device)
                 batch_edge_index = batch_edge_index.to(device)
 
-                # 设备检查
-                batch_x = batch_x.to(device)
-                batch_edge_index = batch_edge_index.to(device)
-
                 optimizer.zero_grad()
                 out = self.global_gat(batch_x, batch_edge_index)
 
@@ -206,26 +209,13 @@ class Server(nn.Module):
 
             print(f"Epoch {epoch + 1}, Loss: {total_loss:.4f}")
 
-            # Early stopping check
-            if total_loss < best_loss:
-                best_loss = total_loss
-                patience_counter = 0
-            else:
-                patience_counter += 1
-
-            if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch + 1}, best loss: {best_loss:.4f}")
-                break
-
-            if 'out' in locals() and out is not None:
-                return out  # 确保返回训练的最终输出
-            else:
-                print("Warning: No output generated from global graph training.")
-                return None
-
+        # 更新全局嵌入
         num_users = self.user_emb.weight.shape[0]
         self.user_emb.weight.data = out[:num_users]  # 更新用户嵌入
         self.item_emb.weight.data = out[num_users:]  # 更新物品嵌入
+
+        # 训练完成后，分发全局嵌入给所有客户端
+        self.distribute_global_embeddings_to_clients()
 
 # GlobalGraphGAT 类
 class GlobalGraphGAT(nn.Module):
@@ -235,16 +225,16 @@ class GlobalGraphGAT(nn.Module):
         self.gat2 = GATConv(hidden_dim * num_heads, output_dim, heads=1, concat=False)
 
     def forward(self, x, edge_index):
-        print(f"x.shape: {x.shape}")  # 查看输入特征的形状
-        print(f"edge_index.shape: {edge_index.shape}")  # 查看边的索引形状
+        #print(f"x.shape: {x.shape}")  # 查看输入特征的形状
+        #print(f"edge_index.shape: {edge_index.shape}")  # 查看边的索引形状
 
         # 第一层 GAT
         x = F.relu(self.gat1(x, edge_index))
-        print(f"After gat1, x.shape: {x.shape}")  # 查看经过 gat1 后的形状
+        #print(f"After gat1, x.shape: {x.shape}")  # 查看经过 gat1 后的形状
 
         # 第二层 GAT
         x = self.gat2(x, edge_index)
-        print(f"After gat2, x.shape: {x.shape}")  # 查看经过 gat2 后的形状
+        #print(f"After gat2, x.shape: {x.shape}")  # 查看经过 gat2 后的形状
 
         return x
 
@@ -258,5 +248,4 @@ def map_to_valid_range(edge_index, num_nodes):
         # 对每个节点索引应用模运算
         edge_index = edge_index % num_nodes
         return edge_index
-
 

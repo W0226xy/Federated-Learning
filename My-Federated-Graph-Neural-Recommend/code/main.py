@@ -106,12 +106,12 @@ if __name__ == "__main__":
                 loss = loss_user
                 loss.backward()  # Backward propagation
 
-                #打印每个参数的梯度
+                # Print gradients for each parameter
                 for name, param in client.model.named_parameters():
                     if param.grad is None:
                         print(f"Warning: {name} has no gradient.")
                     else:
-                        print(f"{name} grad: {param.grad.sum().item()}")  # 打印梯度的和
+                        print(f"{name} grad: {param.grad.sum().item()}")  # Print sum of gradients
 
                 # Add differential privacy noise
                 with torch.no_grad():
@@ -139,10 +139,15 @@ if __name__ == "__main__":
             'model': (list(model_user.parameters()), list(model_item.parameters())),
             'item': (model_item.item_embedding.weight.grad, traini),
             'user': (model_user.user_embedding.weight.grad, trainu),
-            'num_data_points': len(trainu)  # 添加客户端数据量
+            'num_data_points': len(trainu)  # Adding client data size
         }])
         # Train global GAT
         server.global_graph_training()
+
+        # After training, update embeddings based on global model
+        for client in clients:
+            client.update_embeddings(server.model_user.user_embedding.weight.data,
+                                     server.model_item.item_embedding.weight.data)
 
     # test (placeholder, modify as needed)
     model_user.eval()
