@@ -1,44 +1,64 @@
 import torch
-
+from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
+import numpy as np
 class FederatedClient:
     def __init__(self, client_id, local_data, model, device):
         self.client_id = client_id
-        self.local_data = local_data  # 客户端本地数据
-        self.model = model  # 本地模型副本
-        self.device = device  # 使用的设备 (CPU/GPU)
+        self.local_data = local_data
+        self.model = model
+        self.device = device
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
 
-    def train(self, global_model_params):
-        """
-        使用全局模型参数进行本地训练，训练逻辑保持与模型一致。
-        """
-        # 加载全局模型参数
+        print(f"[DEBUG] Client {self.client_id} initialized with local data:")
+        print(f"  Number of batches: {len(self.local_data['batches'])}")
+        for batch_index, batch in enumerate(self.local_data['batches']):
+            print(f"  Batch {batch_index + 1}: {batch}")
+
+    def train(self, global_model_params, user_neighbor_emb):
         self.model.load_state_dict(global_model_params)
         self.model.to(self.device)
         self.model.train()
 
-        # 本地训练循环
-        for user_ids, item_ids, history, neighbor_emb, labels in self.local_data['batches']:
+        print(f"[DEBUG] Client {self.client_id} begins training. Number of batches: {len(self.local_data['batches'])}")
+
+        for batch in self.local_data['batches']:
+            inputs, labels = batch
+            user_ids, item_ids, history, neighbor_emb = inputs
+
             self.optimizer.zero_grad()
 
-            # 数据转移到设备
             user_ids = user_ids.to(self.device)
             item_ids = item_ids.to(self.device)
             history = history.to(self.device)
             neighbor_emb = neighbor_emb.to(self.device)
             labels = labels.to(self.device)
-            print(f"[DEBUG] Training data - History shape: {history.shape}, Neighbor_emb shape: {neighbor_emb.shape}")
-            print(f"[DEBUG] Sample History: {history[:1]}")  # 打印一个用户的历史数据
-            print(f"[DEBUG] Sample Neighbor_emb: {neighbor_emb[:1][:1]}")  # 打印一个用户的第一个邻居嵌入
 
-            # 前向传播与损失计算
-            output = self.model(user_ids, item_ids, history, neighbor_emb)
+            if isinstance(user_neighbor_emb, np.ndarray):
+                user_neighbor_emb = torch.tensor(user_neighbor_emb, dtype=torch.float32)
+
+            if user_neighbor_emb.shape[2] > NEIGHBOR_LEN:
+                user_neighbor_emb = user_neighbor_emb[:, :, :NEIGHBOR_LEN, :]
+            elif user_neighbor_emb.shape[2] < NEIGHBOR_LEN:
+                pad_size = NEIGHBOR_LEN - user_neighbor_emb.shape[2]
+                pad = torch.zeros(user_neighbor_emb.shape[0], user_neighbor_emb.shape[1], pad_size, user_neighbor_emb.shape[3], device=self.device)
+                user_neighbor_emb = torch.cat((user_neighbor_emb, pad), dim=2)
+
+            user_neighbor_emb = user_neighbor_emb.to(self.device)
+
+            print(f"[DEBUG] Processing batch:")
+            print(f"  User IDs shape: {user_ids.shape}, Item IDs shape: {item_ids.shape}")
+            print(f"  History shape: {history.shape}, Neighbor_emb shape: {neighbor_emb.shape}")
+            print(f"  Labels shape: {labels.shape}")
+            print(f"  User Neighbor Emb shape: {user_neighbor_emb.shape}")
+            print(f"  Sample User IDs: {user_ids[:5]}")
+            print(f"  Sample Item IDs: {item_ids[:5]}")
+            print(f"  Sample Labels: {labels[:5]}")
+
+            output = self.model(user_ids, item_ids, history, user_neighbor_emb)
             loss = torch.nn.functional.mse_loss(output, labels)
 
-            # 反向传播与优化
             loss.backward()
             self.optimizer.step()
 
-        # 返回更新后的梯度
         gradients = [param.grad.clone() for param in self.model.parameters()]
         return gradients

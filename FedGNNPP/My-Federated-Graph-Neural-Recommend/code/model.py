@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
+import numpy as np
 
 
 class CustomDataset(Dataset):
@@ -54,29 +56,31 @@ class GraphRecommendationModel(nn.Module):
 
         # History embedding aggregation with GAT for real interactions
         history_emb = self.item_embedding(history)
-        #print(f"Original history_emb shape: {history_emb.shape}")
 
         # Adjust history_emb to ensure dimensions match for concatenation
-        history_emb_expanded = history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1)
-        real_attention_inputs = torch.cat((history_emb_expanded, history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1)), dim=-1)
+        real_attention_inputs = torch.cat(
+            (history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1),
+             history_emb.unsqueeze(2).expand(-1, -1, history_emb.size(1), -1)), dim=-1)
         real_attention_scores = F.relu(self.real_interaction_gat(real_attention_inputs.view(-1, 2 * history_emb.size(-1))))
         real_attention_weights = F.softmax(real_attention_scores.view(history_emb.size(0), history_emb.size(1), history_emb.size(1)), dim=-1)
         aggregated_real_history_emb = (real_attention_weights.unsqueeze(-1) * history_emb.unsqueeze(2)).sum(dim=-2)
 
         # Adjust neighbor_emb to ensure it matches dimensions
-        #print(f"Original neighbor_emb shape: {neighbor_emb.shape}")
         if neighbor_emb.dim() < 4:
             # Fill missing neighbor embeddings with default values (e.g., zeros)
             neighbor_emb = torch.zeros(user_ids.size(0), history.size(1), 100, history_emb.size(-1), device=history.device)
-            #print(f"Filled neighbor_emb shape: {neighbor_emb.shape}")
 
-        padding_size = history_emb.size(-1) - neighbor_emb.size(-1)
-        if padding_size > 0:
-            neighbor_emb = F.pad(neighbor_emb, (0, padding_size), "constant", 0)
-        #print(f"Adjusted neighbor_emb shape: {neighbor_emb.shape}")
+        # 获取 neighbor_emb 的邻居数量
+        neighbor_emb_size = neighbor_emb.size(2)
+
+        # 动态扩展 aggregated_real_history_emb 以匹配 neighbor_emb 的维度
+        aggregated_real_history_emb = aggregated_real_history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb_size, -1)
+
+        # 确保拼接维度匹配
+        neighbor_attention_inputs = torch.cat((aggregated_real_history_emb, neighbor_emb), dim=-1)
 
         # GAT Layer for neighbor aggregation based on real interactions
-        neighbor_attention_inputs = torch.cat((aggregated_real_history_emb.unsqueeze(2).expand(-1, -1, neighbor_emb.size(2), -1), neighbor_emb), dim=-1)
+        neighbor_attention_inputs = torch.cat((aggregated_real_history_emb, neighbor_emb), dim=-1)
         neighbor_attention_scores = F.relu(self.neighbor_gat(neighbor_attention_inputs.view(-1, 2 * history_emb.size(-1))))
         neighbor_attention_weights = F.softmax(neighbor_attention_scores.view(neighbor_emb.size(0), neighbor_emb.size(1), neighbor_emb.size(2)), dim=-1)
         aggregated_emb_real = (neighbor_attention_weights.unsqueeze(-1) * neighbor_emb).sum(dim=-2)

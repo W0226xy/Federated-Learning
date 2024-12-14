@@ -5,7 +5,7 @@ import numpy as np
 import base64
 from tqdm import tqdm
 
-def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False):
+def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False, all_item_ids=None):
     # local encryption
     local_ciphertext = []
     for i in tqdm(usernei):  # For each user's neighbors, generate encrypted signatures
@@ -14,8 +14,8 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
             if j != Otraining.shape[1] + 2:
                 # If privacy is needed, apply perturbation before signing
                 if privacy_needed:
-                    perturbed_j = perturb_items([str(j)])  # Perturb item ID
-                    j = perturbed_j[0]
+                    perturbed_j = perturb_items([str(j)], all_item_ids)  # Perturb item ID with all_item_ids
+                    j = int(perturbed_j[0])
                 messages.append(base64.b64encode(sign(str(j))).decode('utf-8'))
         local_ciphertext.append(messages)  # Store encrypted neighbor IDs
 

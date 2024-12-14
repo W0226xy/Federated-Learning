@@ -80,8 +80,10 @@ if __name__ == "__main__":
         user_neighbor_embs = []
         for client in clients:
             try:
+                all_item_ids = list(range(Otraining.shape[1]))  # 全局物品ID列表
                 user_neighbor_emb = graph_embedding_expansion(
-                    Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy(), privacy_needed=True
+                    Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy(), privacy_needed=True,
+                    all_item_ids=all_item_ids
                 )
                 user_neighbor_embs.append(user_neighbor_emb)
                 print(f"[DEBUG] Generated neighbor_emb shape for client {client.client_id}: {user_neighbor_emb.shape}")

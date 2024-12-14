@@ -1,6 +1,7 @@
 import numpy as np
 from torch.utils.data import DataLoader
 from model import CustomDataset
+from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
 
 
 def generate_batch_data_random(batch_size, train_user_index, trainu, traini, history, trainlabel, user_neighbor_emb):
@@ -66,13 +67,28 @@ def split_data_for_clients(data, num_clients):
 
 
 def generate_local_batches(client_data, batch_size):
-    """
-    为客户端生成本地批量数据。
-
-    :param client_data: 客户端分配的本地数据
-    :param batch_size: 每批次数据大小
-    :return: 批量数据的迭代器
-    """
     user_ids, item_ids, labels = zip(*client_data)
-    dataset = CustomDataset(user_ids, item_ids, labels, history=None, neighbor_emb=None)  # history 和 neighbor_emb 可扩展
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    # Debug: Check generated user, item, and label data
+    print(f"[DEBUG] Generating batches:")
+    print(f"  User IDs: {user_ids[:5]}")
+    print(f"  Item IDs: {item_ids[:5]}")
+    print(f"  Labels: {labels[:5]}")
+
+    # Create dummy history and neighbor_emb for debugging (replace with actual data)
+    history = [np.zeros(HIS_LEN, dtype=np.int32) for _ in labels]
+    neighbor_emb = [np.zeros((HIS_LEN, NEIGHBOR_LEN, HIDDEN), dtype=np.float32) for _ in labels]
+
+    dataset = CustomDataset(user_ids, item_ids, labels, history, neighbor_emb)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    # Debug: Log batch structures
+    for batch_index, batch in enumerate(dataloader):
+        inputs, labels = batch
+        print(f"[DEBUG] Batch {batch_index + 1}:")
+        print(f"  Inputs shapes: {[x.shape for x in inputs]}")
+        print(f"  Labels shape: {labels.shape}")
+
+    return dataloader
+
+
