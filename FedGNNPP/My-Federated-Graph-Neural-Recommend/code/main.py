@@ -16,10 +16,10 @@ from torch.utils.data import DataLoader
 
 # Define constants for federated learning
 NUM_CLIENTS = 5
-NUM_ROUNDS = 100#后面应用了早停机制，不一定是跑100轮
+NUM_ROUNDS = 3
 PATIENCE = 3  # Number of rounds to wait for improvement
 
-path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
 
 # main.py
 if __name__ == "__main__":
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # Initialize global model and server
     num_users, num_items = Otraining.shape[0], Otraining.shape[1]
-    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN)
+    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device)
     server = FederatedServer(global_model)
 
     print("[INFO] Global model and server initialized.")
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         FederatedClient(
             client_id=i,
             local_data={'batches': train_batches[i]},
-            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN),
+            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device),
             device=device
         )
         for i in range(NUM_CLIENTS)
@@ -110,6 +110,12 @@ if __name__ == "__main__":
                 history = history.long().to(device)  # Ensure tensor type is consistent and move to device
                 neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
                 labels = labels.to(device)  # Move labels to device
+
+                # Debugging devices
+                #print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
+                #print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
+                #print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+
                 output = global_model(user_ids, item_ids, history, neighbor_emb)
                 loss = torch.nn.functional.mse_loss(output, labels)  # Compute loss for evaluation
                 round_loss += loss.item()
@@ -145,6 +151,12 @@ if __name__ == "__main__":
             history = history.long().to(device)  # Ensure tensor type is consistent and move to device
             neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
             labels = labels.to(device)  # Move labels to device
+
+            # Debugging devices
+            print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
+            print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
+            print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+
             output = global_model(user_ids, item_ids, history, neighbor_emb)
             all_preds.append(output)
             all_labels.append(labels)

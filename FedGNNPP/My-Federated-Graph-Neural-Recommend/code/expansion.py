@@ -32,7 +32,7 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
     mapping_range = max(max_neighbor_id + 1, Otraining.shape[1] + 3)
 
     local_mapping_dict = {base64.b64encode(sign(str(j))).decode('utf-8'): j for j in range(mapping_range)}
-    print(f"[DEBUG] Total keys in local_mapping_dict: {len(local_mapping_dict)}")
+    #print(f"[DEBUG] Total keys in local_mapping_dict: {len(local_mapping_dict)}")
 
     # assume the local_ciphertext has been sent to the third-party server
 

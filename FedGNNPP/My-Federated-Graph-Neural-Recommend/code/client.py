@@ -52,13 +52,13 @@ class FederatedClient:
                 )
                 batch_neighbor_emb = torch.cat((batch_neighbor_emb, pad), dim=2)
 
-            print(f"[DEBUG] Processing batch:")
-            print(f"  User IDs shape: {user_ids.shape}, Item IDs shape: {item_ids.shape}")
-            print(f"  History shape: {history.shape}, Labels shape: {labels.shape}")
-            print(f"  Batch Neighbor Emb shape: {batch_neighbor_emb.shape}")
-            print(f"  Sample User IDs: {user_ids[:5]}")
-            print(f"  Sample Item IDs: {item_ids[:5]}")
-            print(f"  Sample Labels: {labels[:5]}")
+            # print(f"[DEBUG] Processing batch:")
+            # print(f"  User IDs shape: {user_ids.shape}, Item IDs shape: {item_ids.shape}")
+            # print(f"  History shape: {history.shape}, Labels shape: {labels.shape}")
+            # print(f"  Batch Neighbor Emb shape: {batch_neighbor_emb.shape}")
+            # print(f"  Sample User IDs: {user_ids[:5]}")
+            # print(f"  Sample Item IDs: {item_ids[:5]}")
+            # print(f"  Sample Labels: {labels[:5]}")
 
             # Forward pass
             output = self.model(user_ids, item_ids, history, batch_neighbor_emb)
