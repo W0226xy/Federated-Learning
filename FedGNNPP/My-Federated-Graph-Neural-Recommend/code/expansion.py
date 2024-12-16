@@ -5,7 +5,15 @@ import numpy as np
 import base64
 from tqdm import tqdm
 
-def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False, all_item_ids=None):
+def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False, all_item_ids=None, user_ids=None):
+    """
+    Generate neighbor embeddings only for specified user_ids.
+    If user_ids is None, process all users in usernei.
+    """
+    # Filter usernei based on user_ids if provided
+    if user_ids is not None:
+        usernei = [usernei[u] for u in user_ids]
+
     # local encryption
     local_ciphertext = []
     for i in tqdm(usernei):  # For each user's neighbors, generate encrypted signatures

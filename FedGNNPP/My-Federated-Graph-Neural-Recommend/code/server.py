@@ -1,5 +1,6 @@
 import torch
 
+
 class FederatedServer:
     def __init__(self, global_model):
         self.global_model = global_model  # 全局模型
@@ -12,8 +13,13 @@ class FederatedServer:
         """
         with torch.no_grad():
             for param_index, param in enumerate(self.global_model.parameters()):
-                aggregated_grad = sum(client_grad[param_index] for client_grad in client_gradients) / len(client_gradients)
-                param.grad = aggregated_grad  # 更新全局梯度
+                # 聚合客户端梯度
+                aggregated_grad = sum(client_grad[param_index] for client_grad in client_gradients) / len(
+                    client_gradients)
+
+                # 确保梯度与模型参数在同一设备上
+                param.grad = aggregated_grad.to(param.device)
+
         self.global_optimizer.step()  # 更新全局模型参数
 
     def distribute_model(self):

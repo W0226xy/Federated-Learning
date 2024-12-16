@@ -16,7 +16,8 @@ from torch.utils.data import DataLoader
 
 # Define constants for federated learning
 NUM_CLIENTS = 5
-NUM_ROUNDS = 10
+NUM_ROUNDS = 100#后面应用了早停机制，不一定是跑100轮
+PATIENCE = 3  # Number of rounds to wait for improvement
 
 path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
 
@@ -72,28 +73,21 @@ if __name__ == "__main__":
     ]
     print(f"[INFO] {NUM_CLIENTS} clients initialized successfully.")
 
+    # Early stopping parameters
+    best_loss = float('inf')  # Initialize best loss to infinity
+    early_stop_counter = 0  # Counter for early stopping
+
     # Federated learning loop
     for round_num in range(NUM_ROUNDS):
         print(f"\n[Round {round_num + 1}] Starting training...")
 
-        # Distribute extended neighbor embeddings per client
-        user_neighbor_embs = []
-        for client in clients:
-            try:
-                all_item_ids = list(range(Otraining.shape[1]))  # 全局物品ID列表
-                user_neighbor_emb = graph_embedding_expansion(
-                    Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy(), privacy_needed=True,
-                    all_item_ids=all_item_ids
-                )
-                user_neighbor_embs.append(user_neighbor_emb)
-                print(f"[DEBUG] Generated neighbor_emb shape for client {client.client_id}: {user_neighbor_emb.shape}")
-            except Exception as e:
-                print(f"[ERROR] Failed to generate neighbor_emb for client {client.client_id}: {str(e)}")
-
+        round_loss = 0  # Accumulate round loss
         client_gradients = []
-        for client, user_neighbor_emb in zip(clients, user_neighbor_embs):
+        for client in clients:
             print(f"[INFO] Client {client.client_id} starts training.")
-            client_gradient = client.train(server.distribute_model(), user_neighbor_emb)
+            client_gradient = client.train(
+                global_model.state_dict(), Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy()
+            )
             client_gradients.append(client_gradient)
             print(f"[INFO] Client {client.client_id} finished training.")
 
@@ -102,9 +96,43 @@ if __name__ == "__main__":
         server.aggregate_gradients(client_gradients)
         print(f"[Round {round_num + 1}] Training completed. Global model updated.")
 
-    print("\n[Training Completed] Evaluating global model...")
+        # Evaluation phase (calculate round loss)
+        global_model.eval()
+        test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # Placeholder for neighbor_emb
+        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+        all_preds = []
+        all_labels = []
+        round_loss = 0
+        with torch.no_grad():
+            for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
+                user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+                item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+                history = history.long().to(device)  # Ensure tensor type is consistent and move to device
+                neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
+                labels = labels.to(device)  # Move labels to device
+                output = global_model(user_ids, item_ids, history, neighbor_emb)
+                loss = torch.nn.functional.mse_loss(output, labels)  # Compute loss for evaluation
+                round_loss += loss.item()
 
-    # Evaluation phase (placeholder, modify as needed)
+        round_loss /= len(test_loader)  # Average loss over all test batches
+        print(f"[Round {round_num + 1}] Average Loss: {round_loss}")
+
+        # Early stopping logic
+        if round_loss < best_loss:
+            best_loss = round_loss
+            early_stop_counter = 0
+            print(f"[INFO] New best loss: {best_loss}")
+        else:
+            early_stop_counter += 1
+            print(f"[INFO] No improvement. Early stop counter: {early_stop_counter}/{PATIENCE}")
+
+        if early_stop_counter >= PATIENCE:
+            print(f"[INFO] Early stopping triggered after {round_num + 1} rounds.")
+            break
+
+    print("\n[Training Completed] Final evaluation...")
+
+    # Final evaluation phase
     global_model.eval()
     test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # Placeholder for neighbor_emb
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -112,9 +140,6 @@ if __name__ == "__main__":
     all_labels = []
     with torch.no_grad():
         for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
-            print(f"[DEBUG] Test Neighbor_emb shape: {neighbor_emb.shape}")
-            print(f"[DEBUG] Test Neighbor_emb sample (first user, first item): {neighbor_emb[0][0][:5]}")
-
             user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
             item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
             history = history.long().to(device)  # Ensure tensor type is consistent and move to device
