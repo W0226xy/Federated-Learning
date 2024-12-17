@@ -2,26 +2,30 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-
-
+from const import *
+import numpy as np
 class CustomDataset(Dataset):
     def __init__(self, user_ids, item_ids, labels, history, neighbor_emb):
         self.user_ids = user_ids
         self.item_ids = item_ids
         self.labels = labels
-        self.history = history
-        self.neighbor_emb = neighbor_emb
+        self.history = history  # 真实历史数据
+        self.neighbor_emb = neighbor_emb  # 真实邻居嵌入
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        max_idx = min(len(self.user_ids), len(self.item_ids), len(self.history), len(self.neighbor_emb),
-                      len(self.labels))
-        if idx >= max_idx:
-            idx = max_idx - 1
+        user_id = self.user_ids[idx]
+        item_id = self.item_ids[idx]
+        label = self.labels[idx]
 
-        return (self.user_ids[idx], self.item_ids[idx], self.history[idx], self.neighbor_emb[idx]), self.labels[idx]
+        history = self.history[user_id]  # 通过用户 ID 索引历史数据
+        neighbor_emb = self.neighbor_emb[user_id]  # 通过用户 ID 索引邻居嵌入
+
+        return (user_id, item_id, history, neighbor_emb), label
+
+
 
 
 class GraphRecommendationModel(nn.Module):

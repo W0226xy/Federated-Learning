@@ -3,34 +3,28 @@ from torch.utils.data import DataLoader
 from model import CustomDataset
 from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
 
-
 def generate_batch_data_random(batch_size, train_user_index, trainu, traini, history, trainlabel, user_neighbor_emb):
     idx = np.array(list(train_user_index.keys()))  # Randomize user indices
     np.random.shuffle(idx)  # Shuffle user indices to ensure different order for each batch
     batches = [idx[range(batch_size * i, min(len(idx), batch_size * (i + 1)))] for i in
                range(len(idx) // batch_size + 1) if len(range(batch_size * i, min(len(idx), batch_size * (i + 1))))]
     # Divide user indices into batches according to batch size
-    while (True):  # Infinite loop to keep generating data
+    while True:  # Infinite loop to keep generating data
         for i in batches:
             idxs = [train_user_index[u] for u in i]
-            uid = np.array([])
-            iid = np.array([])
-            uneiemb = user_neighbor_emb[:0]
-            y = np.array([])
+            uid, iid, y = [], [], []
             for idss in idxs:
-                uid = np.concatenate([uid, trainu[idss]])  # Concatenate user IDs
-                iid = np.concatenate([iid, traini[idss]])  # Concatenate item IDs
-                y = np.concatenate([y, trainlabel[idss]])  # Concatenate labels
-                uneiemb = np.concatenate([uneiemb, user_neighbor_emb[trainu[idss]]],
-                                         axis=0)  # Concatenate neighbor embeddings
+                uid.extend(trainu[idss])  # Extend user IDs
+                iid.extend(traini[idss])  # Extend item IDs
+                y.extend(trainlabel[idss])  # Extend labels
             uid = np.array(uid, dtype='int32')
             iid = np.array(iid, dtype='int32')
             ui = history[uid]
+            uneiemb = user_neighbor_emb[uid]  # Access neighbor embeddings dynamically
             uid = np.expand_dims(uid, axis=1)  # Expand dimensions for model input
             iid = np.expand_dims(iid, axis=1)
 
-            yield ([uid, iid, ui, uneiemb], [y])  # Yield generated batch data
-
+            yield ([uid, iid, ui, uneiemb], [np.array(y, dtype='float32')])  # Yield generated batch data
 
 def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neighbor_emb):
     idx = np.arange(len(testlabel))
@@ -38,15 +32,14 @@ def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neigh
     y = testlabel
     batches = [idx[range(batch_size * i, min(len(y), batch_size * (i + 1)))] for i in range(len(y) // batch_size + 1)]
 
-    while (True):
+    while True:
         for i in batches:
             uid = np.expand_dims(testu[i], axis=1)
             iid = np.expand_dims(testi[i], axis=1)
             ui = history[testu[i]]
             uneiemb = user_neighbor_emb[testu[i]]
 
-            yield ([uid, iid, ui, uneiemb], [y])
-
+            yield ([uid, iid, ui, uneiemb], [y[i]])
 
 def split_data_for_clients(data, num_clients):
     """
@@ -65,8 +58,7 @@ def split_data_for_clients(data, num_clients):
             data_splits.append(data[i * split_size:(i + 1) * split_size])
     return data_splits
 
-
-def generate_local_batches(client_data, batch_size):
+def generate_local_batches(client_data, batch_size, user_neighbor_emb, history):
     user_ids, item_ids, labels = zip(*client_data)
 
     # Debug: Check generated user, item, and label data
@@ -75,11 +67,14 @@ def generate_local_batches(client_data, batch_size):
     print(f"  Item IDs: {item_ids[:5]}")
     print(f"  Labels: {labels[:5]}")
 
-    # Create dummy history and neighbor_emb for debugging (replace with actual data)
-    history = [np.zeros(HIS_LEN, dtype=np.int32) for _ in labels]
-    neighbor_emb = [np.zeros((HIS_LEN, NEIGHBOR_LEN, HIDDEN), dtype=np.float32) for _ in labels]
-
-    dataset = CustomDataset(user_ids, item_ids, labels, history, neighbor_emb)
+    # Pass real history and neighbor_emb to the dataset
+    dataset = CustomDataset(
+        user_ids,
+        item_ids,
+        labels,
+        history=history,  # 真实的历史数据
+        neighbor_emb=user_neighbor_emb  # 真实的邻居嵌入
+    )
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Debug: Log batch structures
@@ -90,5 +85,4 @@ def generate_local_batches(client_data, batch_size):
         print(f"  Labels shape: {labels.shape}")
 
     return dataloader
-
 

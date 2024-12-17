@@ -19,7 +19,7 @@ NUM_CLIENTS = 5
 NUM_ROUNDS = 3
 PATIENCE = 3  # Number of rounds to wait for improvement
 
-path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
 
 # main.py
 if __name__ == "__main__":
@@ -55,10 +55,13 @@ if __name__ == "__main__":
     print(f"[INFO] Data split into {NUM_CLIENTS} clients.")
 
     # Generate batches for each client
+    user_neighbor_emb = graph_embedding_expansion(Otraining, usernei,global_model.user_embedding.weight.data.cpu().numpy())
+    # 生成本地数据批次
     train_batches = [
-        generate_local_batches(client_data, BATCH_SIZE)
+        generate_local_batches(client_data, BATCH_SIZE, user_neighbor_emb, usernei)
         for client_data in client_data_splits
     ]
+
     print(f"[INFO] Training batches generated for each client.")
 
     # Initialize clients
