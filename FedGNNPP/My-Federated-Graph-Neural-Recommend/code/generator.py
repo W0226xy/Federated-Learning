@@ -62,10 +62,10 @@ def generate_local_batches(client_data, batch_size, user_neighbor_emb, history):
     user_ids, item_ids, labels = zip(*client_data)
 
     # Debug: Check generated user, item, and label data
-    print(f"[DEBUG] Generating batches:")
-    print(f"  User IDs: {user_ids[:5]}")
-    print(f"  Item IDs: {item_ids[:5]}")
-    print(f"  Labels: {labels[:5]}")
+    # print(f"[DEBUG] Generating batches:")
+    # print(f"  User IDs: {user_ids[:5]}")
+    # print(f"  Item IDs: {item_ids[:5]}")
+    # print(f"  Labels: {labels[:5]}")
 
     # Pass real history and neighbor_emb to the dataset
     dataset = CustomDataset(
@@ -80,9 +80,9 @@ def generate_local_batches(client_data, batch_size, user_neighbor_emb, history):
     # Debug: Log batch structures
     for batch_index, batch in enumerate(dataloader):
         inputs, labels = batch
-        print(f"[DEBUG] Batch {batch_index + 1}:")
-        print(f"  Inputs shapes: {[x.shape for x in inputs]}")
-        print(f"  Labels shape: {labels.shape}")
+        # print(f"[DEBUG] Batch {batch_index + 1}:")
+        # print(f"  Inputs shapes: {[x.shape for x in inputs]}")
+        # print(f"  Labels shape: {labels.shape}")
 
     return dataloader
 

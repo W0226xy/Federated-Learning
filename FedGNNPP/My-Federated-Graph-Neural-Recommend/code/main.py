@@ -19,7 +19,7 @@ NUM_CLIENTS = 5
 NUM_ROUNDS = 3
 PATIENCE = 3  # Number of rounds to wait for improvement
 
-path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
 
 # main.py
 if __name__ == "__main__":
@@ -63,7 +63,6 @@ if __name__ == "__main__":
     ]
 
     print(f"[INFO] Training batches generated for each client.")
-
     # Initialize clients
     clients = [
         FederatedClient(
@@ -156,9 +155,9 @@ if __name__ == "__main__":
             labels = labels.to(device)  # Move labels to device
 
             # Debugging devices
-            print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
-            print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
-            print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+            # print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
+            # print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
+            # print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
 
             output = global_model(user_ids, item_ids, history, neighbor_emb)
             all_preds.append(output)
@@ -166,4 +165,4 @@ if __name__ == "__main__":
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
-    print('rmse:', rmse)
+    print('Final evaluation phase:rmse:', rmse)
