@@ -1,7 +1,10 @@
+# generator.py
+
 import numpy as np
 from torch.utils.data import DataLoader
 from model import CustomDataset
 from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
+
 
 def generate_batch_data_random(batch_size, train_user_index, trainu, traini, history, trainlabel, user_neighbor_emb):
     idx = np.array(list(train_user_index.keys()))  # Randomize user indices
@@ -26,6 +29,7 @@ def generate_batch_data_random(batch_size, train_user_index, trainu, traini, his
 
             yield ([uid, iid, ui, uneiemb], [np.array(y, dtype='float32')])  # Yield generated batch data
 
+
 def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neighbor_emb):
     idx = np.arange(len(testlabel))
     np.random.shuffle(idx)
@@ -41,6 +45,7 @@ def generate_batch_data(batch_size, testu, testi, history, testlabel, user_neigh
 
             yield ([uid, iid, ui, uneiemb], [y[i]])
 
+
 def split_data_for_clients(data, num_clients):
     """
     将全局数据分割成多个客户端数据分片。
@@ -51,38 +56,22 @@ def split_data_for_clients(data, num_clients):
     """
     data_splits = []
     split_size = len(data) // num_clients
+    print(f"[DEBUG] Total data points: {len(data)}")
+    print(f"[DEBUG] Split size per client: {split_size}")
+
     for i in range(num_clients):
-        if i == num_clients - 1:  # 确保最后一个客户端包含剩余数据
-            data_splits.append(data[i * split_size:])
+        if i == num_clients - 1:
+            split = data[i * split_size:]
         else:
-            data_splits.append(data[i * split_size:(i + 1) * split_size])
+            split = data[i * split_size:(i + 1) * split_size]
+        data_splits.append(split)
+        print(f"[DEBUG] Client {i} has {len(split)} data points.")
+
     return data_splits
+
 
 def generate_local_batches(client_data, batch_size, user_neighbor_emb, history):
     user_ids, item_ids, labels = zip(*client_data)
-
-    # Debug: Check generated user, item, and label data
-    # print(f"[DEBUG] Generating batches:")
-    # print(f"  User IDs: {user_ids[:5]}")
-    # print(f"  Item IDs: {item_ids[:5]}")
-    # print(f"  Labels: {labels[:5]}")
-
-    # Pass real history and neighbor_emb to the dataset
-    dataset = CustomDataset(
-        user_ids,
-        item_ids,
-        labels,
-        history=history,  # 真实的历史数据
-        neighbor_emb=user_neighbor_emb  # 真实的邻居嵌入
-    )
+    dataset = CustomDataset(user_ids, item_ids, labels, history=history, neighbor_emb=user_neighbor_emb)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    # Debug: Log batch structures
-    for batch_index, batch in enumerate(dataloader):
-        inputs, labels = batch
-        # print(f"[DEBUG] Batch {batch_index + 1}:")
-        # print(f"  Inputs shapes: {[x.shape for x in inputs]}")
-        # print(f"  Labels shape: {labels.shape}")
-
     return dataloader
-

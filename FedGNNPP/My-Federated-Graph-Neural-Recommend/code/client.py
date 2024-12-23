@@ -1,3 +1,5 @@
+# client.py
+
 import torch
 from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
 import numpy as np
@@ -15,9 +17,20 @@ class FederatedClient:
         self.scaler = torch.cuda.amp.GradScaler()
 
         print(f"[DEBUG] Client {self.client_id} initialized with local data:")
+        # Check the number of batches
         print(f"  Number of batches: {len(self.local_data['batches'])}")
+        # Iterate over the first few batches for debugging
         for batch_index, batch in enumerate(self.local_data['batches']):
-            print(f"  Batch {batch_index + 1}: {batch}")
+            if batch_index >= 2:  # Only print first 2 batches to avoid clutter
+                break
+            print(f"  Batch {batch_index + 1}:")
+            inputs, labels = batch
+            user_ids, item_ids, history, neighbor_emb = inputs
+            print(f"    user_ids: {user_ids[:5]}")
+            print(f"    item_ids: {item_ids[:5]}")
+            print(f"    history: {history[:5]}")
+            print(f"    neighbor_emb: {neighbor_emb[:5]}")
+            print(f"    labels: {labels[:5]}")
 
     def train(self, global_model_params, Otraining, usernei, global_embedding):
         self.model.load_state_dict(global_model_params)
@@ -32,7 +45,7 @@ class FederatedClient:
 
         for batch_idx, batch in enumerate(self.local_data['batches']):
             inputs, labels = batch
-            user_ids, item_ids, history, _ = inputs
+            user_ids, item_ids, history, neighbor_emb = inputs
 
             user_ids = user_ids.to(self.device)
             item_ids = item_ids.to(self.device)

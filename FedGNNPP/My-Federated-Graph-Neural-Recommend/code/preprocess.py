@@ -1,3 +1,5 @@
+# preprocess.py
+
 import random
 import numpy as np
 from const import *
@@ -50,6 +52,7 @@ def generate_training_data(Otraining, M):  # Generate training data including us
     if any(i >= max_item_id for i in traini):
         print(f"[DEBUG] Invalid item ID in training data: {traini}")
 
+    print(f"[DEBUG] Generated training data - trainu: {len(trainu)}, traini: {len(traini)}, trainlabel: {len(trainlabel)}")
     return trainu, traini, trainlabel, train_user_index
 
 def generate_test_data(Otest, M):  # Generate test data
@@ -76,4 +79,5 @@ def generate_test_data(Otest, M):  # Generate test data
     if any(i >= max_item_id for i in testi):
         print(f"[DEBUG] Invalid item ID in test data: {testi}")
 
+    print(f"[DEBUG] Generated test data - testu: {len(testu)}, testi: {len(testi)}, testlabel: {len(testlabel)}")
     return testu, testi, testlabel

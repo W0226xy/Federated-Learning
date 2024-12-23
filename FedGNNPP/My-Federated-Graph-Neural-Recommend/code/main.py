@@ -1,3 +1,5 @@
+# main.py
+
 from utils import *
 from encrypt import *
 from model import *
@@ -15,14 +17,49 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 # Define constants for federated learning
-NUM_CLIENTS = 5
-NUM_ROUNDS = 3
+NUM_CLIENTS = 20
+NUM_ROUNDS = 3  # 例如，设为10轮
 PATIENCE = 3  # Number of rounds to wait for improvement
+SELECTED_CLIENTS_PER_ROUND = 5  # 每轮选择的客户端数量
 
 path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
 
+
+def select_clients(available_clients, num_selected):
+    """
+    从 available_clients 中选择 num_selected 个客户端。
+    如果 available_clients 中不足 num_selected 个，则选择所有剩余的，并重置 available_clients。
+
+    :param available_clients: List[int], 尚未被选中的客户端ID列表
+    :param num_selected: int, 每轮选择的客户端数量
+    :return: List[int], 选择的客户端ID列表, 更新后的 available_clients
+    """
+    if len(available_clients) < num_selected:
+        selected = available_clients.copy()
+        # 重置 available_clients
+        available_clients = list(range(NUM_CLIENTS))
+        # 从剩余需要选择的客户端中随机选择
+        remaining = num_selected - len(selected)
+        selected += random.sample(available_clients, remaining)
+        # 移除已选择的客户端
+        for client_id in selected[len(selected) - remaining:]:
+            available_clients.remove(client_id)
+    else:
+        selected = random.sample(available_clients, num_selected)
+        for client_id in selected:
+            available_clients.remove(client_id)
+    return selected, available_clients
+
+
 # main.py
 if __name__ == "__main__":
+
+    # Set random seeds for reproducibility (optional)
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
     # Set device to GPU if available
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -42,33 +79,43 @@ if __name__ == "__main__":
     testu, testi, testlabel = generate_test_data(Otest, M)  # Generate test data
 
     print("[INFO] Data preprocessed successfully.")
+    print(f"[DEBUG] Training data counts - trainu: {len(trainu)}, traini: {len(traini)}, trainlabel: {len(trainlabel)}")
 
     # Initialize global model and server
     num_users, num_items = Otraining.shape[0], Otraining.shape[1]
-    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device)
+    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
+        device)
     server = FederatedServer(global_model)
 
     print("[INFO] Global model and server initialized.")
 
     # Split data among clients
-    client_data_splits = split_data_for_clients(list(zip(trainu, traini, trainlabel)), NUM_CLIENTS)
+    data = list(zip(trainu, traini, trainlabel))
+    client_data_splits = split_data_for_clients(data, NUM_CLIENTS)
     print(f"[INFO] Data split into {NUM_CLIENTS} clients.")
 
     # Generate batches for each client
-    user_neighbor_emb = graph_embedding_expansion(Otraining, usernei,global_model.user_embedding.weight.data.cpu().numpy())
+    user_neighbor_emb = graph_embedding_expansion(Otraining, usernei,
+                                                  global_model.user_embedding.weight.data.cpu().numpy())
     # 生成本地数据批次
     train_batches = [
         generate_local_batches(client_data, BATCH_SIZE, user_neighbor_emb, usernei)
         for client_data in client_data_splits
     ]
 
+    # 添加调试信息以确认每个 DataLoader 的长度
+    for i, dataloader in enumerate(train_batches):
+        print(f"[DEBUG] Client {i} DataLoader has {len(dataloader)} batches.")
+
     print(f"[INFO] Training batches generated for each client.")
+
     # Initialize clients
     clients = [
         FederatedClient(
             client_id=i,
             local_data={'batches': train_batches[i]},
-            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device),
+            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
+                device),
             device=device
         )
         for i in range(NUM_CLIENTS)
@@ -79,13 +126,21 @@ if __name__ == "__main__":
     best_loss = float('inf')  # Initialize best loss to infinity
     early_stop_counter = 0  # Counter for early stopping
 
+    # Initialize client selection tracking
+    available_clients = list(range(NUM_CLIENTS))  # Initially, all clients are available for selection
+
     # Federated learning loop
     for round_num in range(NUM_ROUNDS):
         print(f"\n[Round {round_num + 1}] Starting training...")
 
+        # Select clients for this round
+        selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND)
+        print(f"[INFO] Selected clients for this round: {selected_clients_ids}")
+
         round_loss = 0  # Accumulate round loss
         client_gradients = []
-        for client in clients:
+        for client_id in selected_clients_ids:
+            client = clients[client_id]
             print(f"[INFO] Client {client.client_id} starts training.")
             client_gradient = client.train(
                 global_model.state_dict(), Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy()
@@ -114,9 +169,9 @@ if __name__ == "__main__":
                 labels = labels.to(device)  # Move labels to device
 
                 # Debugging devices
-                #print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
-                #print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
-                #print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+                # print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
+                # print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
+                # print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
 
                 output = global_model(user_ids, item_ids, history, neighbor_emb)
                 loss = torch.nn.functional.mse_loss(output, labels)  # Compute loss for evaluation
@@ -165,4 +220,4 @@ if __name__ == "__main__":
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
-    print('Final evaluation phase:rmse:', rmse)
+    print('Final evaluation phase: rmse:', rmse)
