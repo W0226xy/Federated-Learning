@@ -11,27 +11,24 @@ from server import FederatedServer
 from client import FederatedClient
 import numpy as np
 import random
-import os
+
 import torch
-import torch.nn as nn
+
 from torch.utils.data import DataLoader
 
-# Define constants for federated learning
-NUM_CLIENTS = 20
-NUM_ROUNDS = 3  # 例如，设为10轮
-PATIENCE = 3  # Number of rounds to wait for improvement
-SELECTED_CLIENTS_PER_ROUND = 5  # 每轮选择的客户端数量
+from model import CustomDataset
 
-path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
 
 
-def select_clients(available_clients, num_selected):
+def select_clients(available_clients, num_selected, NUM_CLIENTS):
     """
     从 available_clients 中选择 num_selected 个客户端。
     如果 available_clients 中不足 num_selected 个，则选择所有剩余的，并重置 available_clients。
 
     :param available_clients: List[int], 尚未被选中的客户端ID列表
     :param num_selected: int, 每轮选择的客户端数量
+    :param NUM_CLIENTS: int, 客户端总数量
     :return: List[int], 选择的客户端ID列表, 更新后的 available_clients
     """
     if len(available_clients) < num_selected:
@@ -51,9 +48,7 @@ def select_clients(available_clients, num_selected):
     return selected, available_clients
 
 
-# main.py
 if __name__ == "__main__":
-
     # Set random seeds for reproducibility (optional)
     random.seed(42)
     np.random.seed(42)
@@ -65,38 +60,44 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # load data
+    # Load data
     M = load_matlab_file(path_dataset, 'M')  # User-item interaction matrix
     Otraining = load_matlab_file(path_dataset, 'Otraining')  # Training interaction data matrix
     Otest = load_matlab_file(path_dataset, 'Otest')  # Testing interaction data matrix
     print('There are %i interactions logs.' % np.sum(np.array(np.array(M, dtype='bool'), dtype='int32')))
 
-    # preprocess data
+    # Preprocess data
     usernei = generate_history(Otraining)  # Generate user interaction history
     print(f"[DEBUG] Generated history (usernei): {usernei[:5]}")  # Print first 5 users' history
 
     trainu, traini, trainlabel, train_user_index = generate_training_data(Otraining, M)  # Generate training data
     testu, testi, testlabel = generate_test_data(Otest, M)  # Generate test data
 
+    unique_train_users = len(train_user_index)
+    print(f"[DEBUG] Number of unique training users: {unique_train_users}")  # 应输出 1132
+
     print("[INFO] Data preprocessed successfully.")
     print(f"[DEBUG] Training data counts - trainu: {len(trainu)}, traini: {len(traini)}, trainlabel: {len(trainlabel)}")
 
     # Initialize global model and server
     num_users, num_items = Otraining.shape[0], Otraining.shape[1]
-    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
-        device)
+    NUM_CLIENTS = unique_train_users  # 设置为 1132
+    NUM_ROUNDS = 3  # 例如，设为3轮
+    PATIENCE = 10  # Number of rounds to wait for improvement
+    SELECTED_CLIENTS_PER_ROUND = 128  # 每轮选择的客户端数量
+
+    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device)
     server = FederatedServer(global_model)
 
     print("[INFO] Global model and server initialized.")
 
     # Split data among clients
     data = list(zip(trainu, traini, trainlabel))
-    client_data_splits = split_data_for_clients(data, NUM_CLIENTS)
+    client_data_splits = split_data_for_clients(data, NUM_CLIENTS)  # 每个客户端仅包含一个用户的数据
     print(f"[INFO] Data split into {NUM_CLIENTS} clients.")
 
     # Generate batches for each client
-    user_neighbor_emb = graph_embedding_expansion(Otraining, usernei,
-                                                  global_model.user_embedding.weight.data.cpu().numpy())
+    user_neighbor_emb = graph_embedding_expansion(Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy())
     # 生成本地数据批次
     train_batches = [
         generate_local_batches(client_data, BATCH_SIZE, user_neighbor_emb, usernei)
@@ -109,13 +110,12 @@ if __name__ == "__main__":
 
     print(f"[INFO] Training batches generated for each client.")
 
-    # Initialize clients
+    # Initialize clients, each client corresponds to one user
     clients = [
         FederatedClient(
             client_id=i,
             local_data={'batches': train_batches[i]},
-            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
-                device),
+            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device),
             device=device
         )
         for i in range(NUM_CLIENTS)
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         print(f"\n[Round {round_num + 1}] Starting training...")
 
         # Select clients for this round
-        selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND)
+        selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND, NUM_CLIENTS)
         print(f"[INFO] Selected clients for this round: {selected_clients_ids}")
 
         round_loss = 0  # Accumulate round loss
@@ -155,7 +155,7 @@ if __name__ == "__main__":
 
         # Evaluation phase (calculate round loss)
         global_model.eval()
-        test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # Placeholder for neighbor_emb
+        test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # 注意：需要正确的 neighbor_emb
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
         all_preds = []
         all_labels = []
@@ -163,15 +163,10 @@ if __name__ == "__main__":
         with torch.no_grad():
             for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
                 user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
-                item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
-                history = history.long().to(device)  # Ensure tensor type is consistent and move to device
-                neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
-                labels = labels.to(device)  # Move labels to device
-
-                # Debugging devices
-                # print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
-                # print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
-                # print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+                item_ids = item_ids.long().to(device)
+                history = history.long().to(device)
+                neighbor_emb = neighbor_emb.float().to(device)
+                labels = labels.to(device)
 
                 output = global_model(user_ids, item_ids, history, neighbor_emb)
                 loss = torch.nn.functional.mse_loss(output, labels)  # Compute loss for evaluation
@@ -197,27 +192,35 @@ if __name__ == "__main__":
 
     # Final evaluation phase
     global_model.eval()
-    test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # Placeholder for neighbor_emb
+    test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # 注意：需要正确的 neighbor_emb
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     all_preds = []
     all_labels = []
     with torch.no_grad():
         for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
-            user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
-            item_ids = item_ids.long().to(device)  # Ensure tensor type is consistent and move to device
-            history = history.long().to(device)  # Ensure tensor type is consistent and move to device
-            neighbor_emb = neighbor_emb.float().to(device)  # Ensure tensor type is consistent and move to device
-            labels = labels.to(device)  # Move labels to device
-
-            # Debugging devices
-            # print(f"[DEBUG] user_ids device: {user_ids.device}, item_ids device: {item_ids.device}")
-            # print(f"[DEBUG] history device: {history.device}, neighbor_emb device: {neighbor_emb.device}")
-            # print(f"[DEBUG] labels device: {labels.device}, global_model device: {next(global_model.parameters()).device}")
+            user_ids = user_ids.long().to(device)
+            item_ids = item_ids.long().to(device)
+            history = history.long().to(device)
+            neighbor_emb = neighbor_emb.float().to(device)
+            labels = labels.to(device)
 
             output = global_model(user_ids, item_ids, history, neighbor_emb)
             all_preds.append(output)
             all_labels.append(labels)
+
+    # Concatenate all predictions and labels
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
+
+    # Calculate RMSE
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
-    print('Final evaluation phase: rmse:', rmse)
+
+    # Calculate MSE
+    mse = np.mean(np.square(all_preds - all_labels / LABEL_SCALE)) * LABEL_SCALE ** 2  # Square RMSE to get MSE
+
+    # Print results
+    print('Final evaluation phase: RMSE:', rmse)
+    print('Final evaluation phase: MSE:', mse)
+
+
+
