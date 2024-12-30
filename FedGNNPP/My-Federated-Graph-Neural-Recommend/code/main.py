@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from model import CustomDataset
 
-path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
+path_dataset = 'D:\学习项目汇总\实验数据集\ml-100k\\split_1.mat'  # Specify dataset file path
 
 
 def select_clients(available_clients, num_selected, NUM_CLIENTS):
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     NUM_CLIENTS = unique_train_users  # 设置为 1132
     NUM_ROUNDS = 3  # 例如，设为3轮
     PATIENCE = 10  # Number of rounds to wait for improvement
-    SELECTED_CLIENTS_PER_ROUND = 128  # 每轮选择的客户端数量
+    SELECTED_CLIENTS_PER_ROUND = 64  # 每轮选择的客户端数量
 
     global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device)
     server = FederatedServer(global_model)

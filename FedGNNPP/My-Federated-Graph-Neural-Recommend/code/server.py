@@ -1,6 +1,5 @@
+#server.py
 import torch
-
-
 class FederatedServer:
     def __init__(self, global_model):
         self.global_model = global_model  # 全局模型

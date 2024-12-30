@@ -1,3 +1,4 @@
+#const.py
 LABEL_SCALE = 100#标签缩放比例
 HIDDEN=64#嵌入维度
 DROP=0.3#DropOut比率，防止过拟合
