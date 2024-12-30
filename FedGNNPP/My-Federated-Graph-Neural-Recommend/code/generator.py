@@ -85,4 +85,3 @@ def generate_local_batches(
     logging.debug(f"Generated DataLoader with batch size {batch_size} for client.")
 
     return dataloader
-

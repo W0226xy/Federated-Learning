@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from model import CustomDataset
 
-path_dataset = 'D:\学习项目汇总\实验数据集\ml-100k\\split_1.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset_50.mat'  # Specify dataset file path
 
 
 def select_clients(available_clients, num_selected, NUM_CLIENTS):
@@ -194,8 +194,12 @@ if __name__ == "__main__":
     global_model.eval()
     test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # 注意：需要正确的 neighbor_emb
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
     all_preds = []
     all_labels = []
+    all_users = []
+    all_items = []
+
     with torch.no_grad():
         for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
             user_ids = user_ids.long().to(device)
@@ -204,13 +208,22 @@ if __name__ == "__main__":
             neighbor_emb = neighbor_emb.float().to(device)
             labels = labels.to(device)
 
+            # Forward pass
             output = global_model(user_ids, item_ids, history, neighbor_emb)
+
+            # Store predictions and labels for evaluation
             all_preds.append(output)
             all_labels.append(labels)
 
-    # Concatenate all predictions and labels
+            # Collect user-item pairs for displaying
+            all_users.append(user_ids.cpu().numpy())
+            all_items.append(item_ids.cpu().numpy())
+
+    # Concatenate all predictions, labels, users, and items
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
+    all_users = np.concatenate(all_users)
+    all_items = np.concatenate(all_items)
 
     # Calculate RMSE
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
@@ -221,6 +234,25 @@ if __name__ == "__main__":
     # Print results
     print('Final evaluation phase: RMSE:', rmse)
     print('Final evaluation phase: MSE:', mse)
+
+    # Optionally, display some examples (first 10 for example)
+    print("\n[INFO] Sample of user-item predictions vs actuals:")
+    for i in range(min(10, len(all_users))):  # Display the first 10 samples from the test set
+        user = all_users[i]  # 获取用户 ID
+        item = all_items[i]  # 获取物品 ID
+        actual_rating = all_labels[i]  # 获取实际评分
+        predicted_rating = all_preds[i]  # 获取预测评分
+
+        # 如果评分是 ndarray，则取第一个元素（标量值）
+        if isinstance(actual_rating, np.ndarray):
+            actual_rating = actual_rating.item()
+
+        if isinstance(predicted_rating, np.ndarray):
+            predicted_rating = predicted_rating.item()
+
+        # 输出用户、物品、实际评分和预测评分
+        print(
+            f"User {user}, Item {item} => Actual Rating: {actual_rating:.4f}, Predicted Rating: {predicted_rating:.4f}")
 
 
 

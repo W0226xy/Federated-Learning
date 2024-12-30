@@ -1,10 +1,46 @@
-#expansion.py
-from encrypt import *
-from const import *
 import random
 import numpy as np
 import base64
+import collections
 from tqdm import tqdm
+from encrypt import *
+from const import *
+
+
+# 步骤1: 构建倒排索引，将物品ID映射到所有与其交互的用户ID
+def build_item_to_users_index(Otraining):
+    """
+    构建倒排索引，将物品ID映射到所有与该物品有交互的用户ID。
+    """
+    item_to_users = collections.defaultdict(set)
+
+    # 遍历 Otraining 矩阵
+    for user_id in range(Otraining.shape[0]):
+        for item_id in range(Otraining.shape[1]):
+            if Otraining[user_id][item_id] != 0:  # 如果用户对物品有交互
+                item_to_users[item_id].add(user_id)
+
+    return item_to_users
+
+
+# 步骤2: 使用倒排索引查找与当前用户相同交互物品的邻居
+def find_nearest_neighbors(user_id, Otraining, item_to_users, top_k=10):
+    """
+    根据用户与物品的交互，查找与该用户有相同交互物品的其他用户。
+    """
+    user_items = set(np.where(Otraining[user_id] != 0)[0])  # 获取用户交互过的所有物品ID
+    neighbor_candidates = collections.defaultdict(int)  # 记录每个候选邻居与当前用户的共同交互次数
+
+    # 对于每个用户交互过的物品，找到与这些物品交互的其他用户
+    for item_id in user_items:
+        for neighbor_id in item_to_users[item_id]:
+            if neighbor_id != user_id:  # 排除当前用户自己
+                neighbor_candidates[neighbor_id] += 1  # 记录共同交互的次数
+
+    # 按照共同交互的次数降序排序，选出前 top_k 个邻居
+    nearest_neighbors = sorted(neighbor_candidates.items(), key=lambda x: x[1], reverse=True)[:top_k]
+    return [neighbor_id for neighbor_id, _ in nearest_neighbors]
+
 
 def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=False, all_item_ids=None, user_ids=None):
     """
@@ -33,7 +69,6 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
     mapping_range = max(max_neighbor_id + 1, Otraining.shape[1] + 3)
 
     local_mapping_dict = {base64.b64encode(sign(str(j))).decode('utf-8'): j for j in range(mapping_range)}
-    #print(f"[DEBUG] Total keys in local_mapping_dict: {len(local_mapping_dict)}")
 
     # assume the local_ciphertext has been sent to the third-party server
 
@@ -63,7 +98,8 @@ def graph_embedding_expansion(Otraining, usernei, alluserembs, privacy_needed=Fa
     user_neighbor_emb = []  # Initialize list to store neighbor embeddings
     for userid, user_items in tqdm(enumerate(usernei)):
         receive_data = send_data[userid]
-        decrypted_data = {local_mapping_dict.get(item_key, None): receive_data[item_key] for item_key in receive_data if item_key in local_mapping_dict}
+        decrypted_data = {local_mapping_dict.get(item_key, None): receive_data[item_key] for item_key in receive_data if
+                          item_key in local_mapping_dict}
 
         # Debug missing keys
         missing_keys = [item_key for item_key in receive_data if item_key not in local_mapping_dict]
