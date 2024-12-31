@@ -5,6 +5,11 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from const import *
 import numpy as np
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)  # 使用 Xavier 初始化
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)  # 将偏置初始化为 0
 class CustomDataset(Dataset):
     def __init__(self, user_ids, item_ids, labels, history, neighbor_emb):
         self.user_ids = user_ids
@@ -25,7 +30,6 @@ class CustomDataset(Dataset):
         neighbor_emb = self.neighbor_emb[user_id]  # 通过用户 ID 索引邻居嵌入
 
         return (user_id, item_id, history, neighbor_emb), label
-
 
 class GraphRecommendationModel(nn.Module):
     def __init__(self, num_users, num_items, hidden_dim, num_heads=4, dropout=0.2):
@@ -50,18 +54,22 @@ class GraphRecommendationModel(nn.Module):
         )
 
         # 初始化GAT层
-        self.real_interaction_gat = nn.Linear(2 * hidden_dim, 1)  # Ensure this layer is correctly initialized
+        self.real_interaction_gat = nn.Linear(2 * hidden_dim, 1)
         self.neighbor_gat = nn.Linear(2 * hidden_dim, 1)
 
         # Multi-head projection层
         self.num_heads = num_heads
-        self.multihead_proj = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim // num_heads) for _ in range(num_heads)])
+        self.multihead_proj = nn.ModuleList(
+            [nn.Linear(hidden_dim, hidden_dim // num_heads) for _ in range(num_heads)])
 
         # Dropout层
         self.dropout = nn.Dropout(dropout)
 
         # 输出层
         self.output_layer = nn.Linear(hidden_dim, 1)
+
+        # 应用权重初始化
+        self.apply(init_weights)
 
     def forward(self, user_ids, item_ids, history=None, neighbor_emb=None):
         # Ensure inputs are on the same device as embeddings

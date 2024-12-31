@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from model import CustomDataset
 
-path_dataset = 'D:\学习项目汇总\实验数据集\Flixster\\training_test_dataset_10_NNs.mat'  # Specify dataset file path
+path_dataset = 'D:\学习项目汇总\实验数据集\ml-100k\split_1.mat'  # Specify dataset file path
 
 
 def select_clients(available_clients, num_selected, NUM_CLIENTS):

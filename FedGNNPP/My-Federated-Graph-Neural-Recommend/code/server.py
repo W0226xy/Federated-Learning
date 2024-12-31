@@ -3,7 +3,7 @@ import torch
 class FederatedServer:
     def __init__(self, global_model):
         self.global_model = global_model  # 全局模型
-        self.global_optimizer = torch.optim.SGD(self.global_model.parameters(), lr=0.01)
+        self.global_optimizer = torch.optim.Adam(self.global_model.parameters(), lr=0.01)
 
     def aggregate_gradients(self, client_gradients):
         """
@@ -18,6 +18,8 @@ class FederatedServer:
 
                 # 确保梯度与模型参数在同一设备上
                 param.grad = aggregated_grad.to(param.device)
+                # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_(self.global_model.parameters(), max_norm=1.0)  # 限制梯度的最大范数为 1.0
 
         self.global_optimizer.step()  # 更新全局模型参数
 
