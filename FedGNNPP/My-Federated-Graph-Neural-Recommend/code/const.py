@@ -1,5 +1,5 @@
 #const.py
-LABEL_SCALE = 100#标签缩放比例
+LABEL_SCALE = 1#标签缩放比例
 HIDDEN=64#嵌入维度
 DROP=0.3#DropOut比率，防止过拟合
 BATCH_SIZE=64#每批训练大小

@@ -11,7 +11,7 @@ class FederatedClient:
         self.local_data = local_data
         self.model = model
         self.device = device
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
 
         # Mixed precision gradient scaler
         self.scaler = torch.cuda.amp.GradScaler()
@@ -74,6 +74,12 @@ class FederatedClient:
                 output = self.model(user_ids, item_ids, history, batch_neighbor_emb)
                 loss = torch.nn.functional.mse_loss(output, labels)
                 loss = loss / accumulation_steps  # Normalize loss for accumulation
+
+            # Print real and predicted ratings for debugging
+            if batch_idx % 10 == 0:  # Print every 10 batches
+                print(f"[Client {self.client_id}] Batch {batch_idx + 1}/{len(self.local_data['batches'])}")
+                print(f"真实评分 (labels): {labels.cpu().numpy()[:5]}")  # Show the first 5 for brevity
+                print(f"预测评分 (output): {output.cpu().detach().numpy()[:5]}")  # Show the first 5 for brevity
 
             # Backward pass with gradient scaling
             self.scaler.scale(loss).backward()

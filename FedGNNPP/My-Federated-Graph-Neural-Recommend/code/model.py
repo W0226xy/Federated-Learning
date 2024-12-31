@@ -125,7 +125,11 @@ class GraphRecommendationModel(nn.Module):
         combined_emb = F.relu(self.fc1(combined_emb))
         combined_emb = self.dropout(combined_emb)
         combined_emb = F.relu(self.fc2(combined_emb))
-        output = F.softmax(self.output_layer(combined_emb), dim=-1)  # 使用 softmax 输出概率分布
+        output = self.output_layer(combined_emb)
+        # 使用 Sigmoid 激活函数将输出值限制在 [0, 1] 范围内
+        normalized_output = torch.sigmoid(output)
 
-        return output
+        # 将 [0, 1] 范围的输出映射到 [1, 5] 范围
+        scaled_output = normalized_output * 4 + 1  # 输出范围 [1, 5]
 
+        return scaled_output
