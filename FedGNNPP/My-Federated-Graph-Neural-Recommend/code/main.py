@@ -1,5 +1,5 @@
 # main.py
-
+import math
 from utils import *
 from encrypt import *
 from model import *
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     NUM_CLIENTS = unique_train_users  # 设置为 1132
     NUM_ROUNDS = 3  # 例如，设为3轮
     PATIENCE = 10  # Number of rounds to wait for improvement
-    SELECTED_CLIENTS_PER_ROUND = 128  # 每轮选择的客户端数量
+    SELECTED_CLIENTS_PER_ROUND = 256
 
     global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(device)
     server = FederatedServer(global_model)
@@ -98,6 +98,9 @@ if __name__ == "__main__":
 
     # Generate batches for each client
     user_neighbor_emb = graph_embedding_expansion(Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy())
+    print(f"[DEBUG] user_neighbor_emb shape: {user_neighbor_emb.shape}")  # 应为 (num_users, NEIGHBOR_LEN, HIDDEN)
+    print(f"[DEBUG] Sample user_neighbor_emb for first 3 users:\n{user_neighbor_emb[:3]}")
+
     # 生成本地数据批次
     train_batches = [
         generate_local_batches(client_data, BATCH_SIZE, user_neighbor_emb, usernei)
@@ -126,35 +129,74 @@ if __name__ == "__main__":
     best_loss = float('inf')  # Initialize best loss to infinity
     early_stop_counter = 0  # Counter for early stopping
 
-    # Initialize client selection tracking
-    available_clients = list(range(NUM_CLIENTS))  # Initially, all clients are available for selection
+    # 初始化全局模型和服务器
+    global_model = GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
+        device)
+    server = FederatedServer(global_model)
 
-    # Federated learning loop
+    print("[INFO] Global model and server initialized.")
+
+    # 数据在客户端之间分割
+    data = list(zip(trainu, traini, trainlabel))
+    client_data_splits = split_data_for_clients(data, NUM_CLIENTS)  # 每个客户端仅包含一个用户的数据
+    print(f"[INFO] Data split into {NUM_CLIENTS} clients.")
+
+    # 生成每个客户端的批次数据，包含预先计算的邻居嵌入
+    train_batches = [
+        generate_local_batches(client_data, BATCH_SIZE, user_neighbor_emb, usernei)
+        for client_data in client_data_splits
+    ]
+
+    # 添加调试信息以确认每个 DataLoader 的长度
+    for i, dataloader in enumerate(train_batches):
+        print(f"[DEBUG] Client {i} DataLoader has {len(dataloader)} batches.")
+
+    print(f"[INFO] Training batches generated for each client.")
+
+    # 初始化客户端，每个客户端对应一个用户
+    clients = [
+        FederatedClient(
+            client_id=i,
+            local_data={'batches': train_batches[i]},
+            model=GraphRecommendationModel(num_users=num_users + 3, num_items=num_items + 3, hidden_dim=HIDDEN).to(
+                device),
+            device=device
+        )
+        for i in range(NUM_CLIENTS)
+    ]
+    print(f"[INFO] {NUM_CLIENTS} clients initialized successfully.")
+
+    # 早停参数
+    best_loss = float('inf')  # 初始化最佳损失为无穷大
+    early_stop_counter = 0  # 早停计数器
+
+    # 初始化客户端选择跟踪
+    available_clients = list(range(NUM_CLIENTS))  # 初始时，所有客户端都可用
+
+    # 联邦学习循环
     for round_num in range(NUM_ROUNDS):
         print(f"\n[Round {round_num + 1}] Starting training...")
 
-        # Select clients for this round
+        # 选择本轮的客户端
         selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND,
                                                                  NUM_CLIENTS)
         print(f"[INFO] Selected clients for this round: {selected_clients_ids}")
 
-        round_loss = 0  # Accumulate round loss
+        round_loss = 0  # 累积本轮损失
         client_gradients = []
         for client_id in selected_clients_ids:
             client = clients[client_id]
             print(f"[INFO] Client {client.client_id} starts training.")
-            client_gradient = client.train(
-                global_model.state_dict(), Otraining, usernei, global_model.user_embedding.weight.data.cpu().numpy()
-            )
+            client_gradient = client.train(global_model.state_dict())  # 移除额外的参数
             client_gradients.append(client_gradient)
             print(f"[INFO] Client {client.client_id} finished training.")
 
-        # Server aggregates gradients and updates global model
+        # 服务器聚合梯度并更新全局模型
         # print("[INFO] Server aggregating gradients.")
         # server.aggregate_gradients(client_gradients, selected_clients_ids)  # 传递选中的客户端 ID
         # print(f"[Round {round_num + 1}] Training completed. Global model updated.")
 
-        # Evaluation phase (calculate round loss)
+        # 评估阶段（计算本轮损失）
         global_model.eval()
         test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # 注意：需要正确的 neighbor_emb
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -163,20 +205,20 @@ if __name__ == "__main__":
         round_loss = 0
         with torch.no_grad():
             for (user_ids, item_ids, history, neighbor_emb), labels in test_loader:
-                user_ids = user_ids.long().to(device)  # Ensure tensor type is consistent and move to device
+                user_ids = user_ids.long().to(device)  # 确保张量类型一致并移动到设备
                 item_ids = item_ids.long().to(device)
                 history = history.long().to(device)
                 neighbor_emb = neighbor_emb.float().to(device)
                 labels = labels.to(device)
 
                 output = global_model(user_ids, item_ids, history, neighbor_emb)
-                loss = torch.nn.functional.mse_loss(output, labels)  # Compute loss for evaluation
+                loss = torch.nn.functional.mse_loss(output, labels)  # 计算评估损失
                 round_loss += loss.item()
 
-        round_loss /= len(test_loader)  # Average loss over all test batches
+        round_loss /= len(test_loader)  # 平均本轮损失
         print(f"[Round {round_num + 1}] Average Loss: {round_loss}")
 
-        # Early stopping logic
+        # 早停逻辑
         if round_loss < best_loss:
             best_loss = round_loss
             early_stop_counter = 0
@@ -191,7 +233,7 @@ if __name__ == "__main__":
 
     print("\n[Training Completed] Final evaluation...")
 
-    # Final evaluation phase
+    # 最终评估阶段
     global_model.eval()
     test_dataset = CustomDataset(testu, testi, testlabel, usernei, usernei)  # 注意：需要正确的 neighbor_emb
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -209,36 +251,36 @@ if __name__ == "__main__":
             neighbor_emb = neighbor_emb.float().to(device)
             labels = labels.to(device)
 
-            # Forward pass
+            # 前向传播
             output = global_model(user_ids, item_ids, history, neighbor_emb)
 
-            # Store predictions and labels for evaluation
+            # 存储预测值和标签以进行评估
             all_preds.append(output)
             all_labels.append(labels)
 
-            # Collect user-item pairs for displaying
+            # 收集用户-物品对以供显示
             all_users.append(user_ids.cpu().numpy())
             all_items.append(item_ids.cpu().numpy())
 
-    # Concatenate all predictions, labels, users, and items
+    # 连接所有预测值、标签、用户和物品
     all_preds = torch.cat(all_preds).cpu().numpy()
     all_labels = torch.cat(all_labels).cpu().numpy()
     all_users = np.concatenate(all_users)
     all_items = np.concatenate(all_items)
 
-    # Calculate RMSE
+    # 计算 RMSE
     rmse = np.sqrt(np.mean(np.square(all_preds - all_labels / LABEL_SCALE))) * LABEL_SCALE
 
-    # Calculate MSE
-    mse = np.mean(np.square(all_preds - all_labels / LABEL_SCALE)) * LABEL_SCALE ** 2  # Square RMSE to get MSE
+    # 计算 MSE
+    mse = np.mean(np.square(all_preds - all_labels / LABEL_SCALE)) * LABEL_SCALE ** 2  # 平方 RMSE 得到 MSE
 
-    # Print results
+    # 打印结果
     print('Final evaluation phase: RMSE:', rmse)
     print('Final evaluation phase: MSE:', mse)
 
-    # Optionally, display some examples (first 10 for example)
+    # 可选：显示一些示例（例如前10个）
     print("\n[INFO] Sample of user-item predictions vs actuals:")
-    for i in range(min(10, len(all_users))):  # Display the first 10 samples from the test set
+    for i in range(min(10, len(all_users))):  # 显示测试集中的前10个样本
         user = all_users[i]  # 获取用户 ID
         item = all_items[i]  # 获取物品 ID
         actual_rating = all_labels[i]  # 获取实际评分
