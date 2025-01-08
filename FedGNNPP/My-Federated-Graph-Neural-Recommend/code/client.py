@@ -3,26 +3,29 @@
 import torch
 from const import HIS_LEN, NEIGHBOR_LEN, HIDDEN
 import numpy as np
-# 移除未使用的导入
-# from expansion import graph_embedding_expansion
+from expansion import graph_embedding_expansion
+
 
 class FederatedClient:
-    def __init__(self, client_id, local_data, model, device):
+    def __init__(self, client_id, local_data, model, device, user_neighbor_emb):
         self.client_id = client_id
         self.local_data = local_data
         self.model = model
         self.device = device
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
 
-        # 混合精度梯度缩放器
+        # Mixed precision gradient scaler
         self.scaler = torch.cuda.amp.GradScaler()
 
+        # Store user_neighbor_emb for later use
+        self.user_neighbor_emb = user_neighbor_emb
+
         print(f"[DEBUG] Client {self.client_id} initialized with local data:")
-        # 检查批次数量
+        # Check the number of batches
         print(f"  Number of batches: {len(self.local_data['batches'])}")
-        # 仅打印前两个批次进行调试
+        # Iterate over the first few batches for debugging
         for batch_index, batch in enumerate(self.local_data['batches']):
-            if batch_index >= 2:  # 只打印前2个批次以避免混乱
+            if batch_index >= 2:  # Only print first 2 batches to avoid clutter
                 break
             print(f"  Batch {batch_index + 1}:")
             inputs, labels = batch
@@ -33,14 +36,14 @@ class FederatedClient:
             print(f"    neighbor_emb: {neighbor_emb[:5]}")
             print(f"    labels: {labels[:5]}")
 
-    def train(self, global_model_params):
+    def train(self, global_model_params, Otraining, usernei, global_embedding):
         self.model.load_state_dict(global_model_params)
         self.model.to(self.device)
         self.model.train()
 
         print(f"[DEBUG] Client {self.client_id} begins training. Number of batches: {len(self.local_data['batches'])}")
 
-        accumulation_steps = 4  # 梯度累积步数
+        accumulation_steps = 4  # Gradient accumulation steps
         epoch_loss = 0
         self.optimizer.zero_grad()
 
@@ -52,17 +55,12 @@ class FederatedClient:
             item_ids = item_ids.to(self.device)
             history = history.to(self.device)
             labels = labels.to(self.device)
-            neighbor_emb = neighbor_emb.to(self.device).float()  # 确保数据类型和设备一致
 
-            # 使用批次中预先计算的邻居嵌入，无需重新生成
-            batch_neighbor_emb = neighbor_emb
-            # 调试信息：确认 user_ids 和对应的 neighbor_emb
-            print(f"[DEBUG] Client {self.client_id} - Batch {batch_idx + 1} - user_ids: {user_ids.cpu().numpy()}")
-            print(
-                f"[DEBUG] Client {self.client_id} - Batch {batch_idx + 1} - neighbor_emb shape: {batch_neighbor_emb.shape}")
-            print(
-                f"[DEBUG] Client {self.client_id} - Batch {batch_idx + 1} - neighbor_emb sample: {batch_neighbor_emb[0][0][0][:5]}")
-            # 调整维度（如果需要）
+            # Directly get neighbor embeddings from user_neighbor_emb
+            batch_neighbor_emb = self.user_neighbor_emb[user_ids.cpu().numpy()]  # Extract neighbor embeddings directly
+            batch_neighbor_emb = torch.tensor(batch_neighbor_emb, dtype=torch.float32).to(self.device)
+
+            # Adjust dimensions
             if batch_neighbor_emb.shape[2] > NEIGHBOR_LEN:
                 batch_neighbor_emb = batch_neighbor_emb[:, :, :NEIGHBOR_LEN, :]
             elif batch_neighbor_emb.shape[2] < NEIGHBOR_LEN:
@@ -73,39 +71,35 @@ class FederatedClient:
                 )
                 batch_neighbor_emb = torch.cat((batch_neighbor_emb, pad), dim=2)
 
-            # 使用混合精度进行前向传播
+            # Forward pass with autocast for mixed precision
             with torch.cuda.amp.autocast():
                 output = self.model(user_ids, item_ids, history, batch_neighbor_emb)
                 loss = torch.nn.functional.mse_loss(output, labels)
-                loss = loss / accumulation_steps  # 归一化损失以进行累积
+                loss = loss / accumulation_steps  # Normalize loss for accumulation
 
-            # 每10个批次打印一次实际评分和预测评分以进行调试
-            if batch_idx % 10 == 0:
+            # Print real and predicted ratings for debugging
+            if batch_idx % 10 == 0:  # Print every 10 batches
                 print(f"[Client {self.client_id}] Batch {batch_idx + 1}/{len(self.local_data['batches'])}")
-                print(f"真实评分 (labels): {labels.cpu().numpy()[:5]}")  # 仅显示前5个以简化
-                print(f"预测评分 (output): {output.cpu().detach().numpy()[:5]}")  # 仅显示前5个以简化
+                print(f"真实评分 (labels): {labels.cpu().numpy()[:5]}")  # Show the first 5 for brevity
+                print(f"预测评分 (output): {output.cpu().detach().numpy()[:5]}")  # Show the first 5 for brevity
 
-            # 使用梯度缩放进行反向传播
+            # Backward pass with gradient scaling
             self.scaler.scale(loss).backward()
 
-            # 梯度累积
+            # Gradient accumulation
             if (batch_idx + 1) % accumulation_steps == 0:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
 
-            # 打印批次损失
-            print(f"[Client {self.client_id}] Batch {batch_idx + 1}/{len(self.local_data['batches'])}, Loss: {loss.item() * accumulation_steps}")
+            # Print batch loss
+            print(
+                f"[Client {self.client_id}] Batch {batch_idx + 1}/{len(self.local_data['batches'])}, Loss: {loss.item() * accumulation_steps}")
             epoch_loss += loss.item() * accumulation_steps
-
-        # 处理剩余的梯度（如果有）
-        if len(self.local_data['batches']) % accumulation_steps != 0:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            self.optimizer.zero_grad()
 
         print(f"[Client {self.client_id}] Epoch Loss: {epoch_loss / len(self.local_data['batches'])}")
         gradients = [
-            param.grad.clone() if param.grad is not None else torch.zeros_like(param) for param in self.model.parameters()
+            param.grad.clone() if param.grad is not None else torch.zeros_like(param) for param in
+            self.model.parameters()
         ]
         return gradients
