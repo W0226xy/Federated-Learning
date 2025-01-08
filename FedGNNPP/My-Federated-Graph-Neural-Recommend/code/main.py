@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from model import CustomDataset
 
-path_dataset = 'D:\学习项目汇总\实验数据集\ml-100k\split_1.mat'  # Specify dataset file path
+path_dataset = 'training_test_dataset.mat'  # Specify dataset file path
 
 
 def select_clients(available_clients, num_selected, NUM_CLIENTS):
@@ -134,7 +134,8 @@ if __name__ == "__main__":
         print(f"\n[Round {round_num + 1}] Starting training...")
 
         # Select clients for this round
-        selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND, NUM_CLIENTS)
+        selected_clients_ids, available_clients = select_clients(available_clients, SELECTED_CLIENTS_PER_ROUND,
+                                                                 NUM_CLIENTS)
         print(f"[INFO] Selected clients for this round: {selected_clients_ids}")
 
         round_loss = 0  # Accumulate round loss
@@ -149,9 +150,9 @@ if __name__ == "__main__":
             print(f"[INFO] Client {client.client_id} finished training.")
 
         # Server aggregates gradients and updates global model
-        print("[INFO] Server aggregating gradients.")
-        server.aggregate_gradients(client_gradients)
-        print(f"[Round {round_num + 1}] Training completed. Global model updated.")
+        # print("[INFO] Server aggregating gradients.")
+        # server.aggregate_gradients(client_gradients, selected_clients_ids)  # 传递选中的客户端 ID
+        # print(f"[Round {round_num + 1}] Training completed. Global model updated.")
 
         # Evaluation phase (calculate round loss)
         global_model.eval()
